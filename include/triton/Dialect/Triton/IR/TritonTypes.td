@@ -84,6 +84,9 @@ def TT_PtrLike : AnyTypeOf<[TT_Ptr, TT_PtrTensor]>;
 def TT_FpIntTensor : AnyTypeOf<[TT_FloatTensor, TT_IntTensor]>;
 def TT_Tensor : AnyTypeOf<[TT_FpIntTensor, TT_PtrTensor]>;
 
+// Scalar Type
+def TT_Scalar : AnyTypeOf<[TT_Float, TT_Int, TT_Ptr]>;
+
 // Pointer Type to Tensor Type: `ptr<tensor<>>`
 def TT_TensorPtr : TT_PtrOf<[TT_Tensor]>;
 

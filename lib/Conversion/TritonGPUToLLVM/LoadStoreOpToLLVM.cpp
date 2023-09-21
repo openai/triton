@@ -926,6 +926,17 @@ void createBarrier(ConversionPatternRewriter &rewriter, Location loc,
     rewriter.create<triton::nvidia_gpu::ClusterWaitOp>(loc);
   }
 }
+
+Value broadcastScalar(ConversionPatternRewriter &rewriter, Location loc,
+                      int numCTAs, Value smemPtr, Value value, Value mask) {
+  smemPtr = bitcast(smemPtr, ptr_ty(value.getType(), 3));
+  LLVM::storeShared(rewriter, loc, smemPtr, value, mask);
+  createBarrier(rewriter, loc, numCTAs);
+  Value ret = LLVM::loadShared(rewriter, loc, smemPtr, /*mask=*/i32_val(true));
+  createBarrier(rewriter, loc, numCTAs);
+  return ret;
+}
+
 } // namespace
 
 struct AtomicCASOpConversion
@@ -971,8 +982,6 @@ struct AtomicCASOpConversion
     auto valueElemNBits = valueElemTy.getIntOrFloatBitWidth();
     Value mask = getMask(valueTy, rewriter, loc);
 
-    Value atomPtr = getSharedMemoryBase(loc, rewriter, op.getOperation());
-    atomPtr = bitcast(atomPtr, ptr_ty(valueElemTy, 3));
     Value casPtr = ptrElements[0];
     Value casCmp = cmpElements[0];
     Value casVal = valElements[0];
@@ -991,18 +1000,120 @@ struct AtomicCASOpConversion
     auto old = ptxBuilderAtomicCAS.launch(rewriter, loc, valueElemTy);
     createBarrier(rewriter, loc, numCTAs);
 
-    PTXBuilder ptxBuilderStore;
-    auto *dstOprStore = ptxBuilderStore.newAddrOperand(atomPtr, "r");
-    auto *valOprStore = ptxBuilderStore.newOperand(old, "r");
-    auto &st = *ptxBuilderStore.create<PTXInstr>("st");
-    st.shared().o("b32");
-    st(dstOprStore, valOprStore).predicate(mask);
-    auto ASMReturnTy = void_ty(ctx);
-    ptxBuilderStore.launch(rewriter, loc, ASMReturnTy);
-    createBarrier(rewriter, loc, numCTAs);
-    Value ret = load(atomPtr);
-    createBarrier(rewriter, loc, numCTAs);
+    Value smemPtr = getSharedMemoryBase(loc, rewriter, op.getOperation());
+    Value ret = broadcastScalar(rewriter, loc, numCTAs, smemPtr, old, mask);
     rewriter.replaceOp(op, {ret});
+    return success();
+  }
+};
+
+struct AtomicLoadOpConversion
+    : public ConvertTritonGPUOpToLLVMPattern<triton::AtomicLoadOp>,
+      public LoadStoreConversionBase {
+  using ConvertTritonGPUOpToLLVMPattern<
+      triton::AtomicLoadOp>::ConvertTritonGPUOpToLLVMPattern;
+
+  AtomicLoadOpConversion(TritonGPUToLLVMTypeConverter &converter,
+                         ModuleAllocation &allocation,
+                         ModuleAxisInfoAnalysis &axisAnalysisPass,
+                         PatternBenefit benefit)
+      : ConvertTritonGPUOpToLLVMPattern<triton::AtomicLoadOp>(
+            converter, allocation, benefit),
+        LoadStoreConversionBase(axisAnalysisPass) {}
+
+  LogicalResult
+  matchAndRewrite(triton::AtomicLoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    MLIRContext *ctx = rewriter.getContext();
+
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    assert(moduleOp && "Parent ModuleOp not found for AtomicCASOp");
+    int numCTAs = triton::gpu::TritonGPUDialect::getNumCTAs(moduleOp);
+
+    Value llPtr = adaptor.getPtr();
+
+    auto ptrElements = getTypeConverter()->unpackLLElements(
+        loc, llPtr, rewriter, op.getPtr().getType());
+
+    auto valueTy = op.getResult().getType();
+    Value mask = getMask(valueTy, rewriter, loc);
+    Value ptr = ptrElements[0];
+
+    auto sem = op.getSem();
+    std::string semStr;
+    llvm::raw_string_ostream os(semStr);
+    os << sem;
+
+    const unsigned width = std::max(8u, valueTy.getIntOrFloatBitWidth());
+    const char *writeConstraint =
+        width == 64 ? "=l" : (width == 32 ? "=r" : "=h");
+    PTXBuilder ptxBuilder;
+    auto *dstOpr = ptxBuilder.newOperand(writeConstraint);
+    auto *ptrOpr = ptxBuilder.newAddrOperand(ptr, "l");
+    auto &ld = ptxBuilder.create<>("ld")->global().o(semStr).o("gpu").b(width);
+
+    ld(dstOpr, ptrOpr).predicate(mask, "b");
+    Value load = ptxBuilder.launch(rewriter, loc, valueTy);
+
+    Value smemPtr = getSharedMemoryBase(loc, rewriter, op.getOperation());
+    Value ret = broadcastScalar(rewriter, loc, numCTAs, smemPtr, load, mask);
+
+    rewriter.replaceOp(op, {ret});
+    return success();
+  }
+};
+
+struct AtomicStoreOpConversion
+    : public ConvertTritonGPUOpToLLVMPattern<triton::AtomicStoreOp>,
+      public LoadStoreConversionBase {
+  using ConvertTritonGPUOpToLLVMPattern<
+      triton::AtomicStoreOp>::ConvertTritonGPUOpToLLVMPattern;
+
+  AtomicStoreOpConversion(TritonGPUToLLVMTypeConverter &converter,
+                          ModuleAllocation &allocation,
+                          ModuleAxisInfoAnalysis &axisAnalysisPass,
+                          PatternBenefit benefit)
+      : ConvertTritonGPUOpToLLVMPattern<triton::AtomicStoreOp>(
+            converter, allocation, benefit),
+        LoadStoreConversionBase(axisAnalysisPass) {}
+
+  LogicalResult
+  matchAndRewrite(triton::AtomicStoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    MLIRContext *ctx = rewriter.getContext();
+
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    assert(moduleOp && "Parent ModuleOp not found for AtomicCASOp");
+    int numCTAs = triton::gpu::TritonGPUDialect::getNumCTAs(moduleOp);
+
+    Value ptr = adaptor.getPtr();
+    Value val = adaptor.getValue();
+
+    auto valueTy = op.getValue().getType();
+    Value mask = getMask(valueTy, rewriter, loc);
+
+    auto sem = op.getSem();
+    std::string semStr;
+    llvm::raw_string_ostream os(semStr);
+    os << sem;
+
+    if (sem != MemSemantic::RELAXED) {
+      // Establish causality order between all threads
+      createBarrier(rewriter, loc, numCTAs);
+    }
+
+    const unsigned width = std::max(8u, valueTy.getIntOrFloatBitWidth());
+    const char *constraint = width == 64 ? "l" : (width == 32 ? "r" : "h");
+    PTXBuilder ptxBuilder;
+    auto *ptrOpr = ptxBuilder.newAddrOperand(ptr, "l");
+    auto *valOpr = ptxBuilder.newOperand(val, constraint);
+    auto &st = ptxBuilder.create<>("st")->global().o(semStr).o("gpu").b(width);
+    st(ptrOpr, valOpr).predicate(mask);
+    ptxBuilder.launch(rewriter, loc, void_ty(ctx));
+
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -1151,19 +1262,10 @@ struct AtomicRMWOpConversion
           rewriter.replaceOp(op, {old});
           return success();
         }
-        Value atomPtr = getSharedMemoryBase(loc, rewriter, op.getOperation());
-        atomPtr = bitcast(atomPtr, ptr_ty(valueElemTy, 3));
+        Value smemPtr = getSharedMemoryBase(loc, rewriter, op.getOperation());
         // Only threads with rmwMask = True store the result
-        PTXBuilder ptxBuilderStore;
-        auto &storeShared =
-            ptxBuilderStore.create<>("st")->shared().o("b" + sBits);
-        auto *ptrOpr = ptxBuilderStore.newAddrOperand(atomPtr, "r");
-        auto *valOpr = ptxBuilderStore.newOperand(old, tyId);
-        storeShared(ptrOpr, valOpr).predicate(rmwMask);
-        ptxBuilderStore.launch(rewriter, loc, void_ty(ctx));
-        createBarrier(rewriter, loc, numCTAs);
-        Value ret = load(atomPtr);
-        createBarrier(rewriter, loc, numCTAs);
+        Value ret =
+            broadcastScalar(rewriter, loc, numCTAs, smemPtr, old, rmwMask);
         rewriter.replaceOp(op, {ret});
       }
     }
@@ -1789,6 +1891,10 @@ void populateLoadStoreOpToLLVMPatterns(
                                       axisInfoAnalysis, benefit);
   patterns.add<AtomicRMWOpConversion>(typeConverter, allocation,
                                       axisInfoAnalysis, benefit);
+  patterns.add<AtomicLoadOpConversion>(typeConverter, allocation,
+                                       axisInfoAnalysis, benefit);
+  patterns.add<AtomicStoreOpConversion>(typeConverter, allocation,
+                                        axisInfoAnalysis, benefit);
   patterns.add<InsertSliceOpConversion>(typeConverter, allocation,
                                         indexCacheInfo, benefit);
   patterns.add<InsertSliceAsyncOpConversion>(

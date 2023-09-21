@@ -269,6 +269,33 @@ def TT_AtomicCASOp : TT_Op<"atomic_cas", [MemoryEffects<[MemRead]>,
     let results = (outs TT_Type:$result);
 }
 
+def TT_AtomicLoadOp : TT_Op<"atomic_load",
+                            [MemoryEffects<[MemRead, MemWrite]>,
+                             TypesMatchWith<"infer ptr type from result type",
+                                            "result", "ptr", "$_self",
+                                            "mlir::OpTrait::impl::verifyLoadStorePointerAndValueType">]> {
+    let summary = "atomic load";
+
+    let description = [{
+        Load a scalar from global memory, synchronized with any other atomic accesses to that value.
+    }];
+    let arguments = (ins TT_Ptr:$ptr, TT_MemSemanticAttr:$sem);
+    let results = (outs TT_Scalar:$result);
+}
+
+def TT_AtomicStoreOp : TT_Op<"atomic_store",
+                             [MemoryEffects<[MemWrite]>,
+                              TypesMatchWith<"infer ptr type from value type",
+                                             "value", "ptr", "$_self",
+                                             "mlir::OpTrait::impl::verifyLoadStorePointerAndValueType">]> {
+    let summary = "atomic store";
+
+    let description = [{
+        Store a scalar to global memory, synchronized with any other atomic accesses to that value.
+    }];
+    let arguments = (ins TT_Ptr:$ptr, TT_Scalar:$value, TT_MemSemanticAttr:$sem);
+}
+
 //
 // Shape Manipulation Ops
 //

@@ -1072,6 +1072,37 @@ def store(ptr: tl.tensor,
 #########
 
 
+def atomic_load(ptr: tl.tensor, sem: str, builder: ir.builder) -> tl.tensor:
+    if sem is None:
+        sem = "acquire"
+    if sem not in {"relaxed", "acquire"}:
+        raise ValueError(f"atomic_load: Unsupported sem argument '{sem}', must be 'relaxed' or 'acquire'")
+    sem = _str_to_sem(sem)
+
+    elt_ty = ptr.type.scalar.element_ty
+    if ptr.type.is_block() or elt_ty.is_block():
+        raise ValueError(f"atomic_load: Only scalar pointers are supported, but got {ptr.type}")
+
+    return tl.tensor(builder.create_atomic_load(ptr.handle, sem), elt_ty)
+
+
+def atomic_store(ptr: tl.tensor, value: tl.tensor, sem: str, builder: ir.builder) -> tl.tensor:
+    if sem is None:
+        sem = "release"
+    if sem not in {"relaxed", "release"}:
+        raise ValueError(f"atomic_store: Unsupported sem argument '{sem}', must be 'relaxed' or 'release'")
+    sem = _str_to_sem(sem)
+
+    elt_ty = ptr.type.scalar.element_ty
+    if ptr.type.is_block() or elt_ty.is_block():
+        raise ValueError(f"atomic_store: Only scalar pointers are supported, but got {ptr.type}")
+
+    # Cast to target data type
+    value = cast(value, elt_ty, builder)
+
+    return tl.tensor(builder.create_atomic_store(ptr.handle, value.handle, sem), elt_ty)
+
+
 def atomic_cas(ptr: tl.tensor,
                cmp: tl.tensor,
                val: tl.tensor,

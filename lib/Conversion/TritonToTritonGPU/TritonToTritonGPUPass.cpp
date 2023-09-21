@@ -506,9 +506,12 @@ struct TritonGenericPattern : public OpConversionPattern<Op> {
   LogicalResult
   matchAndRewrite(Op op, typename Op::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type retType = this->getTypeConverter()->convertType(op.getType());
+    SmallVector<Type, 4> retTypes;
+    for (auto ty : op.getOperation()->getResultTypes()) {
+      retTypes.push_back(this->getTypeConverter()->convertType(ty));
+    }
     addNamedAttrs(
-        rewriter.replaceOpWithNewOp<Op>(op, retType, adaptor.getOperands()),
+        rewriter.replaceOpWithNewOp<Op>(op, retTypes, adaptor.getOperands()),
         adaptor.getAttributes());
     return success();
   }
@@ -699,6 +702,8 @@ void populateTritonPatterns(TritonGPUTypeConverter &typeConverter,
   patterns.insert< // TODO: view should have custom pattern that views the
                    // layout
       TritonGenericPattern<triton::AdvanceOp>,
+      TritonGenericPattern<triton::AtomicLoadOp>,
+      TritonGenericPattern<triton::AtomicStoreOp>,
       TritonGenericPattern<triton::MakeTensorPtrOp>,
       TritonGenericPattern<triton::ViewOp>,
       TritonGenericPattern<triton::BitcastOp>,

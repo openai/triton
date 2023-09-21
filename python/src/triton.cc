@@ -1455,6 +1455,19 @@ void init_triton_ir(py::module &&m) {
              return self.create<mlir::triton::AtomicRMWOp>(dstType, rmwOp, ptr,
                                                            val, mask, sem);
            })
+      .def("create_atomic_load",
+           [](TritonOpBuilder &self, mlir::Value &ptr,
+              mlir::triton::MemSemantic sem) -> mlir::Value {
+             auto ptrType = mlir::getElementTypeOrSelf(ptr)
+                                .cast<mlir::triton::PointerType>();
+             auto dstType = ptrType.getPointeeType();
+             return self.create<mlir::triton::AtomicLoadOp>(dstType, ptr, sem);
+           })
+      .def("create_atomic_store",
+           [](TritonOpBuilder &self, mlir::Value &ptr, mlir::Value &val,
+              mlir::triton::MemSemantic sem) -> void {
+             self.create<mlir::triton::AtomicStoreOp>(ptr, val, sem);
+           })
       // External
       .def("create_extern_elementwise",
            [](TritonOpBuilder &self, const std::string &libName,

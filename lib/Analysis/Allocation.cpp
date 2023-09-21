@@ -147,6 +147,10 @@ SmallVector<unsigned> getScratchConfigForAtomicCAS(triton::AtomicCASOp op) {
   return SmallVector<unsigned>{1};
 }
 
+SmallVector<unsigned> getScratchConfigForAtomicLoad(triton::AtomicLoadOp op) {
+  return {1u};
+}
+
 class AllocationAnalysis {
 public:
   AllocationAnalysis(Operation *operation,
@@ -305,6 +309,13 @@ private:
       auto bytes = elemTy.isa<triton::PointerType>()
                        ? elems * kPtrBitWidth / 8
                        : elems * elemTy.getIntOrFloatBitWidth() / 8;
+      maybeAddScratchBuffer<BufferT::BufferKind::Scratch>(op, bytes,
+                                                          scratchAlignment);
+    } else if (auto loadOp = dyn_cast<triton::AtomicLoadOp>(op)) {
+      auto elemTy = loadOp.getResult().getType();
+      auto bytes = elemTy.isa<triton::PointerType>()
+                       ? kPtrBitWidth / 8
+                       : std::max(1u, elemTy.getIntOrFloatBitWidth() / 8);
       maybeAddScratchBuffer<BufferT::BufferKind::Scratch>(op, bytes,
                                                           scratchAlignment);
     } else if (auto callOp = dyn_cast<CallOpInterface>(op)) {

@@ -1124,6 +1124,54 @@ def advance(base: tensor, offsets, _builder=None):
 # -----------------------
 
 
+@builtin
+def atomic_load(pointer, sem=None, _builder=None):
+    """Performs an atomic load at the memory location specified by :code:`pointer`.
+
+    Memory semantics can be "acquire", or "relaxed". See :func:`atomic_store`
+    for details.
+
+    :param pointer: The memory locations to load.
+    :type pointer: Scalar of dtype=triton.PointerDType
+    :param sem: Memory consistency semantics (default: "acquire")
+    :type sem: str
+
+    """
+    pointer = _to_tensor(pointer, _builder)
+    sem = _constexpr_to_value(sem)
+    return semantic.atomic_load(pointer, sem, _builder)
+
+
+@builtin
+def atomic_store(pointer, value, sem=None, _builder=None):
+    """Performs an atomic store at the memory location specified by :code:`pointer`.
+
+    Memory semantics can be "release", or "relaxed":
+    * "release" means any reads and writes made by the current triton program id
+      will be visible to any corresponding program that reads the value by
+      :code:`tl.atomic_load`` with "acquire" semantics.
+    * "relaxed" implies no additional memory consistency, and only the location
+      being written will obey a causal order. e.g. previous writes made by this
+      program may *NOT* be visible to a program reading the value written.
+
+    For "relaxed", only the memory
+    location being stored to is guarunteed to be consistent with a causal ordering
+    of the program.
+
+    :param pointer: The memory locations to load.
+    :type pointer: Scalar of dtype=triton.PointerDType
+    :param value: The value to store.
+    :type value: Scalar of dtype=`pointer.dtype.element_ty`
+    :param sem: Memory consistency semantics (default: "release")
+    :type sem: str
+
+    """
+    pointer = _to_tensor(pointer, _builder)
+    value = _to_tensor(value, _builder)
+    sem = _constexpr_to_value(sem)
+    return semantic.atomic_store(pointer, value, sem, _builder)
+
+
 def _add_atomic_docstr(name: str) -> Callable[[T], T]:
 
     def _decorator(func: T) -> T:

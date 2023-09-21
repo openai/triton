@@ -1276,6 +1276,108 @@ def test_atomic_cas(sem, num_ctas, device):
     assert f"atom.global.{sem_str}" in h.asm["ptx"]
 
 
+@pytest.mark.parametrize("num_ctas", num_ctas_list)
+@pytest.mark.parametrize("dtype_str", int_dtypes)
+def test_atomic_load_store_relaxed(num_ctas, device, dtype_str):
+
+    @triton.jit
+    def global_sum(in_ptr, out_ptr, workspace, XBLOCK: tl.constexpr):
+        # Compute the global sum of an array of integers using relaxed atomics
+        xid = tl.program_id(0)
+        xindex = xid * XBLOCK + tl.arange(0, XBLOCK)
+
+        block_data = tl.load(in_ptr + xindex)
+        block_sum = tl.sum(block_data).to(block_data.dtype)
+
+        if xid != tl.num_programs(0) - 1:
+            tl.atomic_store(workspace + xid, block_sum, sem="relaxed")
+            return
+
+        # Last block does the final sum
+        full_sum = block_sum.to(tl.int64)
+        for target in range(tl.num_programs(0) - 1):
+            cur_val = tl.full([], -1, workspace.dtype.element_ty)
+            while cur_val == -1:
+                # spin until value is available
+                cur_val = tl.atomic_load(workspace + target, sem="relaxed")
+
+            full_sum += cur_val.to(tl.int64)
+
+        tl.store(out_ptr, full_sum)
+
+    dtype = getattr(torch, dtype_str)
+    XBLOCK = 16 if _bitwidth(dtype_str) > 8 else 1
+    XGRID = 128
+    # Make sure there is no overflow
+    in_data = torch.randint(
+        size=(XGRID, XBLOCK), low=0, high=16, device=device, dtype=dtype)
+    actual = torch.full((), -1, device=device, dtype=torch.int64)
+    workspace = torch.full((XGRID,), -1, device=device, dtype=dtype)
+    expect = torch.sum(in_data)
+
+    h = global_sum[(XGRID,)](in_data, actual, workspace,
+                             XBLOCK=XBLOCK, num_ctas=num_ctas)
+
+    torch.testing.assert_close(expect, actual)
+
+    assert f"st.global.relaxed.gpu" in h.asm["ptx"]
+    assert f"ld.global.relaxed.gpu" in h.asm["ptx"]
+
+
+@pytest.mark.parametrize("num_ctas", num_ctas_list)
+@pytest.mark.parametrize("dtype_str", ("bool", 'uint8', *int_dtypes,))
+def test_atomic_load_store_acquire_release(num_ctas, device, dtype_str):
+
+    @triton.jit
+    def global_parallel_sum(in_ptr, out_ptr, workspace, flags,
+                            XBLOCK: tl.constexpr, YBLOCK: tl.constexpr):
+        xid = tl.program_id(0)
+        xindex = xid * XBLOCK + tl.arange(0, XBLOCK)[:, None]
+        yindex = tl.arange(0, YBLOCK)
+
+        block_data = tl.load(in_ptr + xindex * YBLOCK + yindex[None, :])
+        block_sum = tl.sum(block_data, 0)
+
+        if xid != tl.num_programs(0) - 1:
+            # Publish block_sum in global memory, synchronized via the atomic flag
+            tl.store(workspace + xid * YBLOCK + yindex, block_sum)
+            tl.atomic_store(flags + xid, True, sem="release")
+            return
+
+        # Last block does the final sum
+        full_sum = block_sum
+        for target in range(tl.num_programs(0) - 1):
+            ready_flag = tl.full([], 0, flags.dtype.element_ty)
+            while not ready_flag.to(tl.int1):
+                # spin until value is available
+                ready_flag = tl.atomic_load(flags + target, sem="acquire")
+
+            full_sum += tl.load(workspace + target * YBLOCK + yindex)
+
+        tl.store(out_ptr + yindex, full_sum)
+
+    dtype = getattr(torch, dtype_str)
+    XBLOCK = 8
+    YBLOCK = 16
+    XGRID = 1024
+    in_data = torch.testing.make_tensor(
+        (XGRID, XBLOCK, YBLOCK), low=0, device=device, dtype=torch.float32)
+    actual = torch.full((YBLOCK,), np.nan, device=device, dtype=torch.float32)
+    workspace = torch.zeros((XGRID, YBLOCK), device=device, dtype=torch.float32)
+    flags = torch.zeros((XGRID,), device=device, dtype=dtype)
+
+    expect = in_data.sum(dim=(0, 1))
+
+    h = global_parallel_sum[(XGRID,)](in_data, actual, workspace, flags,
+                                      XBLOCK=XBLOCK, YBLOCK=YBLOCK,
+                                      num_ctas=num_ctas)
+
+    torch.testing.assert_close(expect, actual, rtol=1e-5, atol=1e-5)
+
+    assert f"st.global.release.gpu" in h.asm["ptx"]
+    assert f"ld.global.acquire.gpu" in h.asm["ptx"]
+
+
 # ---------------
 # test cast
 # ---------------
