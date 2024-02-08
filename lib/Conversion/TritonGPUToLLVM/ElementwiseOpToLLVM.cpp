@@ -312,16 +312,27 @@ static const Fp8ConversionDesc Fp32_to_Fp8E5M2 = {
 
 /* ----- Packed integer to BF16 ------ */
 static const std::string S8_to_Bf16 =
-    "{                                           \n"
-    ".reg .s8 s<4>;                              \n"
-    ".reg .f32 f<4>;                             \n"
-    "mov.b32 {s0, s1, s2, s3}, $2;               \n" // unpack
-    "cvt.rn.f32.s8 f0, s0;                       \n" // no s8->bf16 pre-Hopper
-    "cvt.rn.f32.s8 f1, s1;                       \n" // fi[0:15] is always 0
-    "cvt.rn.f32.s8 f2, s2;                       \n" //
-    "cvt.rn.f32.s8 f3, s3;                       \n" //
-    "prmt.b32 $0, f0, f1, 0x7632;                \n" // f32->bf16 + pack
-    "prmt.b32 $1, f2, f3, 0x7632;                \n" //
+    "{                                      \n"
+    ".reg .f32 f<8>;                        \n"
+    ".reg .b32 r<8>;                        \n"
+    "prmt.b32 r0, $2, $2, 34944;            \n"
+    "prmt.b32 r1, $2, $2, 39313;            \n"
+    "prmt.b32 r2, $2 ,$2, 43682;            \n"
+    "prmt.b32 r3, $2 ,$2, 48051;            \n"
+    "add.s32 r4, r0, 1262485504;            \n"
+    "mov.b32 f0, r4;                        \n"
+    "add.f32 f4, f0, 0fCB400000;            \n"
+    "add.s32 r5, r1, 1262485504;            \n"
+    "mov.b32 f1, r5;                        \n"
+    "add.f32 f5, f1, 0fCB400000;            \n"
+    "add.s32 r6, r2, 1262485504;            \n"
+    "mov.b32 f2, r6;                        \n"
+    "add.f32 f6, f2, 0fCB400000;            \n"
+    "add.s32 r7, r3, 1262485504;            \n"
+    "mov.b32 f3, r7;                        \n"
+    "add.f32 f7, f3, 0fCB400000;            \n"
+    "cvt.rn.bf16x2.f32 $0, f5, f4;          \n"
+    "cvt.rn.bf16x2.f32 $1, f7, f6;          \n"
     "}";
 
 // MMA encoding has a different order depending on the element's bit width;
