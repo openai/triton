@@ -12,25 +12,25 @@ include "mlir/IR/PatternBase.td"
 // AddIOp(d, DotOp(a, b, c)) and c==0 => DotOp(a, b, d)
 // AddFOp(d, DotOp(a, b, c)) and c==0 => DotOp(a, b, d)
 def CombineDotAddIPattern : Pat<
-        (Arith_AddIOp $d, (TT_DotOp:$res $a, $b, $c, $allowTF32, $maxNumImpreciseAcc), $overflow),
-        (TT_DotOp $a, $b, $d, $allowTF32, $maxNumImpreciseAcc, (location $res)),
+        (Arith_AddIOp $d, (TT_DotOp:$res $a, $b, $c, $f32Backend, $maxNumImpreciseAcc), $overflow),
+        (TT_DotOp $a, $b, $d, $f32Backend, $maxNumImpreciseAcc, (location $res)),
         [(Constraint<CPred<"isZero($0)">> $c),
          (Constraint<CPred<"res->hasOneUse()">, "dot result has a single use">)]>;
 def CombineDotAddFPattern : Pat<
-        (Arith_AddFOp $d, (TT_DotOp:$res $a, $b, $c, $allowTF32, $maxNumImpreciseAcc), $fastmath),
-        (TT_DotOp $a, $b, $d, $allowTF32, $maxNumImpreciseAcc, (location $res)),
+        (Arith_AddFOp $d, (TT_DotOp:$res $a, $b, $c, $f32Backend, $maxNumImpreciseAcc), $fastmath),
+        (TT_DotOp $a, $b, $d, $f32Backend, $maxNumImpreciseAcc, (location $res)),
         [(Constraint<CPred<"isZero($0)">> $c),
          (Constraint<CPred<"::llvm::cast<::mlir::IntegerAttr>($0).getInt() == 0">> $maxNumImpreciseAcc),
          (Constraint<CPred<"res->hasOneUse()">, "dot result has a single use">)]>;
 
 def CombineDotAddIRevPattern : Pat<
-        (Arith_AddIOp (TT_DotOp:$res $a, $b, $c, $allowTF32, $maxNumImpreciseAcc), $d, $overflow),
-        (TT_DotOp $a, $b, $d, $allowTF32, $maxNumImpreciseAcc, (location $res)),
+        (Arith_AddIOp (TT_DotOp:$res $a, $b, $c, $f32Backend, $maxNumImpreciseAcc), $d, $overflow),
+        (TT_DotOp $a, $b, $d, $f32Backend, $maxNumImpreciseAcc, (location $res)),
         [(Constraint<CPred<"isZero($0)">> $c),
          (Constraint<CPred<"res->hasOneUse()">, "dot result has a single use">)]>;
 def CombineDotAddFRevPattern : Pat<
-        (Arith_AddFOp (TT_DotOp:$res $a, $b, $c, $allowTF32, $maxNumImpreciseAcc), $d, $fastmath),
-        (TT_DotOp $a, $b, $d, $allowTF32, $maxNumImpreciseAcc, (location $res)),
+        (Arith_AddFOp (TT_DotOp:$res $a, $b, $c, $f32Backend, $maxNumImpreciseAcc), $d, $fastmath),
+        (TT_DotOp $a, $b, $d, $f32Backend, $maxNumImpreciseAcc, (location $res)),
         [(Constraint<CPred<"isZero($0)">> $c),
          (Constraint<CPred<"::llvm::cast<::mlir::IntegerAttr>($0).getInt() == 0">> $maxNumImpreciseAcc),
          (Constraint<CPred<"res->hasOneUse()">, "dot result has a single use">)]>;

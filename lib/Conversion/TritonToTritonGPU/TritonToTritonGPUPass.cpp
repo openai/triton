@@ -270,7 +270,7 @@ struct TritonDotPattern : public OpConversionPattern<triton::DotOp> {
     c = rewriter.create<triton::gpu::ConvertLayoutOp>(c.getLoc(), retType, c);
 
     addNamedAttrs(rewriter.replaceOpWithNewOp<triton::DotOp>(
-                      op, retType, a, b, c, adaptor.getAllowTF32(),
+                      op, retType, a, b, c, adaptor.getF32Backend(),
                       adaptor.getMaxNumImpreciseAcc()),
                   adaptor.getAttributes());
     return success();

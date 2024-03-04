@@ -1,4 +1,5 @@
 import inspect
+from typing import Tuple
 
 import numpy as np
 
@@ -62,6 +63,8 @@ class InterpreterOptions:
     debug: bool = False
     arch: str = None
     allow_fp8e4nv: bool = False
+    default_dot_input_precision: str = "tf32"
+    allowed_dot_input_precisions: Tuple[str] = ("tf32", "3xtf32", "ieee")
     max_num_imprecise_acc_default: int = 0
 
 
@@ -348,7 +351,7 @@ class Builder:
     def create_trans(self, arg, perm):
         return TensorHandle(np.transpose(arg.data, perm), arg.dtype)
 
-    def create_dot(self, a, b, d, allow_tf32, max_num_imprecise_acc):
+    def create_dot(self, a, b, d, input_precision, max_num_imprecise_acc):
         return TensorHandle(np.matmul(a.data, b.data) + d.data, d.dtype)
 
     def create_make_range(self, start, stop):

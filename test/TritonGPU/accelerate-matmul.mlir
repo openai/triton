@@ -27,18 +27,18 @@ module attributes {"triton_gpu.compute-capability" = 90 : i32, "triton_gpu.num-c
     // CHECK:   tt.dot {{.*}} -> tensor<128x16xf16, #[[MMA]]>
     // CHECK:   tt.dot {{.*}} -> tensor<128x64xf16, #[[MMA1]]>
     %115 = scf.for %arg15 = %c0_i32 to %c8_i32 step %c1_i32 iter_args(%arg16 = %cst_0) -> (tensor<128x64xf16, #blocked1>) : i32 {
-      %172 = tt.dot %170, %171, %cst {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x16xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<128x16xf16, #blocked>
+      %172 = tt.dot %170, %171, %cst {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x16xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<128x16xf16, #blocked>
       %178 = triton_gpu.convert_layout %172 : tensor<128x16xf16, #blocked> -> tensor<128x16xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>>
-      %180 = tt.dot %178, %179, %arg16 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x16xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<16x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<128x64xf16, #blocked1>
+      %180 = tt.dot %178, %179, %arg16 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x16xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<16x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<128x64xf16, #blocked1>
       scf.yield %180 : tensor<128x64xf16, #blocked1>
     }
     // CHECK: scf.for
     // CHECK:   tt.dot {{.*}} -> tensor<128x32xf16, #[[MMA2]]>
     // CHECK:   tt.dot {{.*}} -> tensor<128x64xf16, #[[MMA1]]>
     %149 = scf.for %arg15 = %c0_i32 to %c8_i32 step %c1_i32 iter_args(%arg16 = %115) -> (tensor<128x64xf16, #blocked1>) : i32 {
-      %166 = tt.dot %164, %165, %cst_2 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked2}>> * tensor<64x32xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked2}>> -> tensor<128x32xf16, #blocked2>
+      %166 = tt.dot %164, %165, %cst_2 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked2}>> * tensor<64x32xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked2}>> -> tensor<128x32xf16, #blocked2>
       %172 = triton_gpu.convert_layout %166 : tensor<128x32xf16, #blocked2> -> tensor<128x32xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>>
-      %174 = tt.dot %172, %173, %arg16 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x32xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<32x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<128x64xf16, #blocked1>
+      %174 = tt.dot %172, %173, %arg16 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x32xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<32x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<128x64xf16, #blocked1>
       scf.yield %174 : tensor<128x64xf16, #blocked1>
     }
     tt.store %153, %149 {cache = 1 : i32, evict = 1 : i32} : tensor<128x64xf16, #blocked1>
@@ -61,12 +61,12 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
     %cst_0 = arith.constant dense<0.000000e+00> : tensor<64x64xf32, #blocked>
     %cst_1 = arith.constant dense<0.000000e+00> : tensor<64x128xf32, #blocked1>
   // CHECK-80: tt.dot {{.*}} -> tensor<64x64xf32, #[[$MMA]]>
-    %d = tt.dot %arg0, %arg1, %cst_0 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} :
+    %d = tt.dot %arg0, %arg1, %cst_0 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} :
       tensor<64x128xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<64x64xf32, #blocked>
     %t = arith.truncf %d : tensor<64x64xf32, #blocked> to tensor<64x64xf16, #blocked>
     %c = triton_gpu.convert_layout %t : tensor<64x64xf16, #blocked> -> tensor<64x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>>
   // CHECK-80: tt.dot {{.*}} -> tensor<64x128xf32, #[[$MMA]]>
-    %r = tt.dot %c, %arg2, %cst_1 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} :
+    %r = tt.dot %c, %arg2, %cst_1 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} :
       tensor<64x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<64x128xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<64x128xf32, #blocked1>
     tt.return %r : tensor<64x128xf32, #blocked1>
   }
@@ -88,7 +88,7 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
   // CHECK-80: tt.fp_to_fp {{.*}} : tensor<64x128xf8E4M3B11FNUZ, #triton_gpu.dot_op<{opIdx = 0, parent = #[[$MMA]], kWidth = 4}>> -> tensor<64x128xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #[[$MMA]], kWidth = 4}>>
   // CHECK-80: tt.fp_to_fp {{.*}} : tensor<128x64xf8E5M2, #triton_gpu.dot_op<{opIdx = 1, parent = #[[$MMA]], kWidth = 4}>> -> tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #[[$MMA]], kWidth = 4}>>
   // CHECK-80: tt.dot {{.*}} -> tensor<64x64xf32, #[[$MMA]]>
-    %d = tt.dot %arg0, %arg1, %cst_0 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} :
+    %d = tt.dot %arg0, %arg1, %cst_0 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} :
       tensor<64x128xf8E4M3B11FNUZ, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<128x64xf8E5M2, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<64x64xf32, #blocked>
     tt.return %d : tensor<64x64xf32, #blocked>
   }
@@ -114,7 +114,7 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
     %2 = triton_gpu.convert_layout %cst_0 : tensor<16x16xf32, #blocked1> -> tensor<16x16xf32, #blocked1>
     // CHECK: tt.dot {{.*}} -> tensor<16x16xf32, #[[MMA]]>
     // CHECK-80: tt.dot {{.*}} -> tensor<16x16xf32, #[[MMA]]>
-    %3 = tt.dot %0, %1, %2 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<16x16xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<16x16xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<16x16xf32, #blocked1>
+    %3 = tt.dot %0, %1, %2 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<16x16xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked1}>> * tensor<16x16xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked1}>> -> tensor<16x16xf32, #blocked1>
     %4 = triton_gpu.convert_layout %3 : tensor<16x16xf32, #blocked1> -> tensor<16x16xf32, #triton_gpu.slice<{dim = 0, parent = #blocked2}>>
     %5 = tt.expand_dims %4 {axis = 0 : i32} : tensor<16x16xf32, #triton_gpu.slice<{dim = 0, parent = #blocked2}>> -> tensor<1x16x16xf32, #blocked2>
     %6 = triton_gpu.convert_layout %5 : tensor<1x16x16xf32, #blocked2> -> tensor<1x16x16xf32, #blocked>
@@ -124,7 +124,7 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
     %10 = triton_gpu.convert_layout %cst : tensor<2x16x16xf32, #blocked> -> tensor<2x16x16xf32, #blocked3>
     // CHECK: tt.dot {{.*}} -> tensor<2x16x16xf32, #[[MMA1]]>
     // CHECK-80: tt.dot {{.*}} -> tensor<2x16x16xf32, #[[MMA1]]>
-    %11 = tt.dot %8, %9, %10 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<2x16x16xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked3}>> * tensor<2x16x16xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked3}>> -> tensor<2x16x16xf32, #blocked3>
+    %11 = tt.dot %8, %9, %10 {f32Backend = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<2x16x16xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked3}>> * tensor<2x16x16xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked3}>> -> tensor<2x16x16xf32, #blocked3>
     %12 = triton_gpu.convert_layout %11 : tensor<2x16x16xf32, #blocked3> -> tensor<2x16x16xf32, #blocked>
     tt.print ": " {hex = false} : %12 : tensor<2x16x16xf32, #blocked>
     tt.return

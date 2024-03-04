@@ -34,7 +34,6 @@ def test_cast_matmul(M, K, N, w_dtype, x_dtype, out_dtype):
     out_torch = torch.matmul(a.to(torch_dtype), b.to(torch_dtype))
     out_triton = torch.empty((M, N), device=device, dtype=torch_dtype)
 
-    allow_tf32 = True
     # launch kernel
     BLOCK_M, BLOCK_N, BLOCK_K = 16, 16, 32
     grid = ((cdiv(M, BLOCK_M) * cdiv(N, BLOCK_N)), 1)
@@ -45,7 +44,6 @@ def test_cast_matmul(M, K, N, w_dtype, x_dtype, out_dtype):
                       stride_bk, stride_bn,  #
                       stride_cm, stride_cn,  #
                       dot_out_dtype: tl.constexpr,  #
-                      allow_tf32: tl.constexpr,  #
                       BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,  #
                       BLOCK_K: tl.constexpr, GROUP_M: tl.constexpr):
         # matrix multiplication
@@ -75,7 +73,7 @@ def test_cast_matmul(M, K, N, w_dtype, x_dtype, out_dtype):
             b = tl.load(B, mask=rk[:, None] < k_remaining, other=_0)
             a = a.to(C.dtype.element_ty)
             b = b.to(C.dtype.element_ty)
-            acc += tl.dot(a, b, out_dtype=dot_out_dtype, allow_tf32=allow_tf32)
+            acc += tl.dot(a, b, out_dtype=dot_out_dtype)
             A += BLOCK_K * stride_ak
             B += BLOCK_K * stride_bk
         acc = acc.to(C.dtype.element_ty)
@@ -91,7 +89,6 @@ def test_cast_matmul(M, K, N, w_dtype, x_dtype, out_dtype):
         a.stride(0), a.stride(1),  #
         b.stride(0), b.stride(1),  #
         out_triton.stride(0), out_triton.stride(1), dot_out_dtype=triton_dtype,  #
-        allow_tf32=allow_tf32,  #
         GROUP_M=8,  #
         BLOCK_M=BLOCK_M,  #
         BLOCK_N=BLOCK_N,  #

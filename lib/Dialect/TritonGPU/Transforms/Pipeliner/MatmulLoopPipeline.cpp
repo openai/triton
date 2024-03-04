@@ -1162,8 +1162,8 @@ void triton::asyncLaunchDots(scf::ForOp forOp) {
     if (resEnc && resEnc.isHopper()) {
       builder.setInsertionPoint(dotOp);
       builder.replaceOpWithNewOp<ttng::DotAsyncOp>(
-          dotOp, dotOp.getA(), dotOp.getB(), dotOp.getC(), dotOp.getAllowTF32(),
-          dotOp.getMaxNumImpreciseAcc());
+          dotOp, dotOp.getA(), dotOp.getB(), dotOp.getC(),
+          dotOp.getF32Backend(), dotOp.getMaxNumImpreciseAcc());
     }
   }
 

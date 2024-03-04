@@ -4,7 +4,7 @@ from triton.backends.nvidia.driver import CudaUtils
 
 from dataclasses import dataclass
 import functools
-from typing import Any
+from typing import Any, Tuple
 import hashlib
 import re
 import tempfile
@@ -69,6 +69,8 @@ class CUDAOptions:
     ptx_version: int = None
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
+    default_dot_input_precision: str = "tf32"
+    allowed_dot_input_precisions: Tuple[str] = ("tf32", "tf32x3", "ieee")
     max_num_imprecise_acc_default: bool = None
     extern_libs: dict = None
     debug: bool = False
@@ -138,6 +140,8 @@ class CUDABackend(BaseBackend):
         passes.ttir.add_convert_to_ttgpuir(pm, opt.num_warps, 32, opt.num_ctas, capability)
         # optimize TTGIR
         passes.ttgpuir.add_coalesce(pm)
+        if capability // 10 >= 8:
+            passes.ttgpuir.add_f32_dot_tc(pm)
         # TODO(Qingyi): Move PlanCTAPass to the front of CoalescePass
         nvidia.passes.ttnvgpuir.add_plan_cta(pm, cluster_info)
         passes.ttgpuir.add_remove_layout_conversions(pm)

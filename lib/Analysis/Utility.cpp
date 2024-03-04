@@ -549,7 +549,7 @@ bool supportMMA(triton::DotOp op, int version) {
     }
   }
   if (aElemTy.isF32() && bElemTy.isF32()) {
-    return op.getAllowTF32() && version >= 2;
+    return op.getF32Backend() == F32Backend::TF32 && version >= 2;
   }
   return supportMMA(op.getA(), version) && supportMMA(op.getB(), version);
 }

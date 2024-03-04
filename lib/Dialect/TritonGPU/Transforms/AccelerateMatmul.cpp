@@ -327,7 +327,7 @@ public:
     }
     // convert dot instruction
     auto newDot = rewriter.create<tt::DotOp>(dotOp.getLoc(), newRetType, a, b,
-                                             newAcc, dotOp.getAllowTF32(),
+                                             newAcc, dotOp.getF32Backend(),
                                              dotOp.getMaxNumImpreciseAcc());
 
     rewriter.replaceOpWithNewOp<ttg::ConvertLayoutOp>(op, oldRetType,

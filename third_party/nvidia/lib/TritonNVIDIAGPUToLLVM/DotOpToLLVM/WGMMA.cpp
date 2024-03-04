@@ -523,8 +523,8 @@ LogicalResult convertWGMMA(triton::DotOp op, triton::DotOp::Adaptor adaptor,
   return convertDot(typeConverter, rewriter, op.getLoc(), op.getOperation(), //
                     op.getA(), op.getB(), op.getC(), op.getD(),              //
                     adaptor.getA(), adaptor.getB(), adaptor.getC(),          //
-                    op.getAllowTF32(), op.getMaxNumImpreciseAcc(), true,
-                    thread);
+                    op.getF32Backend() == F32Backend::TF32,
+                    op.getMaxNumImpreciseAcc(), true, thread);
 }
 
 LogicalResult convertAsyncWGMMA(triton::nvidia_gpu::DotAsyncOp op,
@@ -540,6 +540,6 @@ LogicalResult convertAsyncWGMMA(triton::nvidia_gpu::DotAsyncOp op,
   return convertDot(typeConverter, rewriter, op.getLoc(), op.getOperation(), //
                     op.getA(), op.getB(), op.getC(), op.getD(),              //
                     adaptor.getA(), adaptor.getB(), adaptor.getC(),
-                    op.getAllowTF32(), op.getMaxNumImpreciseAcc(), false,
-                    thread);
+                    op.getF32Backend() == F32Backend::TF32,
+                    op.getMaxNumImpreciseAcc(), false, thread);
 }

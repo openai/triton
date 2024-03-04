@@ -107,4 +107,15 @@ def TT_PropagateNanAttr : I32EnumAttr<
     let cppNamespace = "::mlir::triton";
 }
 
+// F32Backend
+def TT_F32BackendAttr : I32EnumAttr<
+    "F32Backend", "",
+    [
+      I32EnumAttrCase<"TF32", 0, "tf32">,
+      I32EnumAttrCase<"TF32x3", 1, "tf32x3">,
+      I32EnumAttrCase<"IEEE", 2, "ieee">
+    ]>{
+  let cppNamespace = "::mlir::triton";
+}
+
 #endif

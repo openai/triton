@@ -90,7 +90,7 @@ def _kernel(A, B, C, M, N, K,  #
             stride_bk, stride_bn,  #
             stride_cm, stride_cn,  #
             acc_dtype: tl.constexpr,  #
-            allow_tf32: tl.constexpr,  #
+            input_precision: tl.constexpr,  #
             fp8_fast_accum: tl.constexpr,  #
             BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,  #
             GROUP_M: tl.constexpr, SPLIT_K: tl.constexpr, EVEN_K: tl.constexpr, AB_DTYPE: tl.constexpr  #
@@ -129,9 +129,9 @@ def _kernel(A, B, C, M, N, K,  #
             a = a.to(AB_DTYPE)
             b = b.to(AB_DTYPE)
         if fp8_fast_accum:
-            acc = tl.dot(a, b, acc, out_dtype=acc_dtype, allow_tf32=allow_tf32)
+            acc = tl.dot(a, b, acc, out_dtype=acc_dtype, input_precision=input_precision)
         else:
-            acc += tl.dot(a, b, out_dtype=acc_dtype, allow_tf32=allow_tf32)
+            acc += tl.dot(a, b, out_dtype=acc_dtype, input_precision=input_precision)
         A += BLOCK_K * SPLIT_K * stride_ak
         B += BLOCK_K * SPLIT_K * stride_bk
     acc = acc.to(C.dtype.element_ty)
@@ -153,7 +153,7 @@ class _matmul(torch.autograd.Function):
     _locks = {}
 
     @staticmethod
-    def _call(a, b, acc_dtype, allow_tf32, fp8_fast_accum, output_dtype):
+    def _call(a, b, acc_dtype, input_precision, fp8_fast_accum, output_dtype):
         device = a.device
         # handle non-contiguous inputs if necessary
         if a.stride(0) > 1 and a.stride(1) > 1:
@@ -205,14 +205,14 @@ class _matmul(torch.autograd.Function):
             b.stride(0), b.stride(1),  #
             c.stride(0), c.stride(1),  #
             acc_dtype=acc_dtype,  #
-            allow_tf32=allow_tf32,  #
+            input_precision=input_precision,  #
             fp8_fast_accum=fp8_fast_accum,  #
             GROUP_M=8, AB_DTYPE=ab_dtype)
         return c
 
     @staticmethod
-    def forward(ctx, a, b, acc_dtype=None, allow_tf32=True, fp8_fast_accum=True, output_dtype=None):
-        return _matmul._call(a, b, acc_dtype=acc_dtype, allow_tf32=allow_tf32, fp8_fast_accum=fp8_fast_accum,
+    def forward(ctx, a, b, acc_dtype=None, input_precision=None, fp8_fast_accum=True, output_dtype=None):
+        return _matmul._call(a, b, acc_dtype=acc_dtype, input_precision=input_precision, fp8_fast_accum=fp8_fast_accum,
                              output_dtype=output_dtype)
 
 

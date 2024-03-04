@@ -14,6 +14,8 @@ std::unique_ptr<Pass> createPipelinePass(int numStages = 3, int numWarps = 4,
 
 std::unique_ptr<Pass> createAccelerateMatmulPass(int computeCapability = 80);
 
+std::unique_ptr<Pass> createF32DotTCPass();
+
 std::unique_ptr<Pass> createPrefetchPass();
 
 std::unique_ptr<Pass> createCoalescePass();

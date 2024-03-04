@@ -1,7 +1,7 @@
 from triton.backends.compiler import BaseBackend
 from triton._C.libtriton import ir, passes, llvm, amd
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Tuple
 import hashlib
 import tempfile
 import os
@@ -21,6 +21,8 @@ class HIPOptions:
     debug: bool = False
     arch: str = None
     allow_fp8e4nv: bool = False
+    default_dot_input_precision: str = "ieee"
+    allowed_dot_input_precisions: Tuple[str] = ("ieee",)
     enable_fp_fusion: bool = True
     capability: int = None
     matrix_inst_shape: int = 0

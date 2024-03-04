@@ -66,7 +66,7 @@ public:
         op->getLoc(), dotOp.getType(), _0f);
     auto newDot = rewriter.create<triton::DotOp>(
         op->getLoc(), dotOp.getType(), dotOp.getOperand(0),
-        dotOp.getOperand(1), _0, dotOp.getAllowTF32(),
+        dotOp.getOperand(1), _0, dotOp.getF32Backend(),
         dotOp.getMaxNumImpreciseAcc());
     auto newCvt = rewriter.create<triton::gpu::ConvertLayoutOp>(
         op->getLoc(), dstTy, newDot.getResult());
