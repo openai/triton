@@ -19,6 +19,7 @@ class Autotuner(KernelInterface):
         key,
         reset_to_zero,
         restore_value,
+        overrides: Dict,
         prune_configs_by: Dict = None,
         warmup=25,
         rep=100,
@@ -44,6 +45,7 @@ class Autotuner(KernelInterface):
         self.restore_idx = []
         if restore_value is not None:
             self.restore_idx = [arg_names.index(k) for k in restore_value]
+        self.overrides = overrides if overrides is not None else {}
 
         # Hook to reset or restore for required tensors
         self.pre_hook = lambda args, reset_only=False: 0
@@ -79,6 +81,7 @@ class Autotuner(KernelInterface):
         self.num_reps = rep
 
     def _bench(self, *args, config, **meta):
+        meta.update(self.overrides)
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -224,7 +227,7 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100):
+def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, overrides=None, warmup=25, rep=100):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -264,7 +267,7 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, overrides, prune_configs_by, warmup, rep)
 
     return decorator
 
