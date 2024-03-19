@@ -22,6 +22,7 @@ class Autotuner(KernelInterface):
         prune_configs_by: Dict = None,
         warmup=25,
         rep=100,
+        report=False,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -77,6 +78,7 @@ class Autotuner(KernelInterface):
         self.fn = fn
         self.num_warmups = warmup
         self.num_reps = rep
+        self.report = report
 
     def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -109,6 +111,8 @@ class Autotuner(KernelInterface):
 
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
+        autotune_start = time.time()
+        used_cached_result = True
         if len(self.configs) > 1:
             all_args = {**self.nargs, **kwargs}
             _args = []
@@ -122,6 +126,7 @@ class Autotuner(KernelInterface):
             key = tuple(key)
             if key not in self.cache:
                 # prune configs
+                used_cached_result = False
                 pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
                 timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
@@ -134,6 +139,11 @@ class Autotuner(KernelInterface):
         else:
             config = self.configs[0]
         self.best_config = config
+        if self.report and not used_cached_result:
+            autotune_stop = time.time()
+            print(
+                f"Autotuner for function {self.fn} finished after {autotune_stop-autotune_start:.2f}s; best config selected: {self.best_config};"
+            )
         full_nargs = {**self.nargs, **kwargs, **self.best_config.kwargs}
         if config.pre_hook is not None:
             config.pre_hook(full_nargs)
@@ -224,7 +234,8 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100):
+def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
+             report=False):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -261,10 +272,13 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     :type warmup: int
     :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 100.
     :type rep: int
+    :param report: Flag to enable printing the selected configuration
+    :type report: bool
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep,
+                         report)
 
     return decorator
 
