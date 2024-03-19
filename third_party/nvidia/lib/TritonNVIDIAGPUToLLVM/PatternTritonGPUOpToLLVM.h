@@ -54,10 +54,6 @@ void populateClampFOpToLLVMPattern(LLVMTypeConverter &typeConverter,
                                    ModuleAxisInfoAnalysis &axisInfoAnalysis,
                                    int computeCapability,
                                    PatternBenefit benefit);
-
-void populatePrintOpToLLVMPattern(LLVMTypeConverter &typeConverter,
-                                  RewritePatternSet &patterns,
-                                  PatternBenefit benefit);
 } // namespace NVIDIA
 } // namespace triton
 } // namespace mlir

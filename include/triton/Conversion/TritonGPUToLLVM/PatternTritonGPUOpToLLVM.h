@@ -89,6 +89,11 @@ void populateFuncOpConversionPattern(LLVMTypeConverter &typeConverter,
                                      RewritePatternSet &patterns, int numWarps,
                                      PatternBenefit benefit);
 
+void populatePrintOpToLLVMPattern(LLVMTypeConverter &typeConverter,
+                                  RewritePatternSet &patterns,
+                                  const TargetInfoBase &targetInfo,
+                                  PatternBenefit benefit);
+
 } // namespace triton
 } // namespace mlir
 
