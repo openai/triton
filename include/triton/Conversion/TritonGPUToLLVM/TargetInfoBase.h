@@ -33,6 +33,10 @@ public:
       ArrayRef<unsigned> paddedRepShape, ArrayRef<unsigned> origRepShape,
       ArrayRef<unsigned> outOrd, unsigned accumNumReplicates) const = 0;
 
+  // Prints the given |msg| with |args| on the device.
+  virtual void printf(Value msg, ValueRange args,
+                      ConversionPatternRewriter &rewriter) const = 0;
+
   virtual ~TargetInfoBase() {}
 };
 } // namespace mlir::triton

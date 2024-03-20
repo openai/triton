@@ -164,7 +164,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       if (i == 0) {
         formatStrValue = llPrintf(formatStr, printfOperands, rewriter);
       } else {
-        llPrintf(formatStrValue, printfOperands, rewriter);
+        targetInfo.printf(formatStrValue, printfOperands, rewriter);
       }
     }
   }
@@ -217,58 +217,9 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     return "";
   }
 
-  // declare vprintf(i8*, i8*) as external function
-  static LLVM::LLVMFuncOp
-  getVprintfDeclaration(ConversionPatternRewriter &rewriter) {
-    auto moduleOp =
-        rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
-    StringRef funcName("vprintf");
-    Operation *funcOp = moduleOp.lookupSymbol(funcName);
-    if (funcOp)
-      return cast<LLVM::LLVMFuncOp>(*funcOp);
-
-    auto *context = rewriter.getContext();
-
-    SmallVector<Type> argsType{ptr_ty(context), ptr_ty(context)};
-    auto funcType = LLVM::LLVMFunctionType::get(i32_ty, argsType);
-
-    ConversionPatternRewriter::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPointToStart(moduleOp.getBody());
-
-    return rewriter.create<LLVM::LLVMFuncOp>(UnknownLoc::get(context), funcName,
-                                             funcType);
-  }
-
-  // extend integer to int32, extend float to float64
-  // this comes from vprintf alignment requirements.
-  static std::pair<Type, Value>
-  promoteValue(ConversionPatternRewriter &rewriter, Value value) {
-    auto *context = rewriter.getContext();
-    auto type = value.getType();
-    Value newOp = value;
-    Type newType = type;
-    auto loc = UnknownLoc::get(context);
-
-    bool bUnsigned = type.isUnsignedInteger();
-    if (type.isIntOrIndex() && type.getIntOrFloatBitWidth() < 32) {
-      if (bUnsigned) {
-        newType = ui32_ty;
-        newOp = zext(newType, value);
-      } else {
-        newType = i32_ty;
-        newOp = sext(newType, value);
-      }
-    } else if (type.isBF16() || type.isF16() || type.isF32()) {
-      newType = f64_ty;
-      newOp = fpext(newType, value);
-    }
-
-    return {newType, newOp};
-  }
-
   // Returns a Value for the format string, which you can reuse.
-  static Value llPrintf(StringRef msg, ValueRange args,
-                        ConversionPatternRewriter &rewriter) {
+  Value llPrintf(StringRef msg, ValueRange args,
+                 ConversionPatternRewriter &rewriter) const {
     assert(!msg.empty() && "printf with empty string not supported");
     llvm::SmallString<64> msgNewline(msg);
     msgNewline.push_back('\n');
@@ -276,51 +227,8 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     Value msgValue =
         LLVM::addStringToModule(UnknownLoc::get(rewriter.getContext()),
                                 rewriter, "printfFormat_", msgNewline);
-    llPrintf(msgValue, args, rewriter);
+    targetInfo.printf(msgValue, args, rewriter);
     return msgValue;
-  }
-
-  static void llPrintf(Value msg, ValueRange args,
-                       ConversionPatternRewriter &rewriter) {
-    auto *ctx = rewriter.getContext();
-    Type ptr = ptr_ty(ctx);
-    auto moduleOp =
-        rewriter.getBlock()->getParent()->getParentOfType<ModuleOp>();
-    auto funcOp = getVprintfDeclaration(rewriter);
-    auto loc = UnknownLoc::get(ctx);
-
-    Value one = i32_val(1);
-    Value zero = i32_val(0);
-
-    Value bufferPtr = null(ptr);
-
-    SmallVector<Value, 16> newArgs;
-    if (args.size() >= 1) {
-      SmallVector<Type> argTypes;
-      for (auto arg : args) {
-        Type newType;
-        Value newArg;
-        std::tie(newType, newArg) = promoteValue(rewriter, arg);
-        argTypes.push_back(newType);
-        newArgs.push_back(newArg);
-      }
-
-      Type structTy = LLVM::LLVMStructType::getLiteral(ctx, argTypes);
-      auto allocated =
-          rewriter.create<LLVM::AllocaOp>(loc, ptr_ty(ctx), structTy, one,
-                                          /*alignment=*/0);
-
-      for (const auto &entry : llvm::enumerate(newArgs)) {
-        auto index = i32_val(entry.index());
-        auto fieldPtr =
-            gep(ptr_ty(ctx), structTy, allocated, ArrayRef<Value>{zero, index});
-        store(entry.value(), fieldPtr);
-      }
-      bufferPtr = bitcast(allocated, ptr);
-    }
-
-    SmallVector<Value> operands{msg, bufferPtr};
-    call(funcOp, operands);
   }
 
 protected:

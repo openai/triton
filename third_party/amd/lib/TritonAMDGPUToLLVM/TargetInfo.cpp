@@ -68,7 +68,7 @@ Value TargetInfo::shuffleIdx(Location loc, ConversionPatternRewriter &rewriter,
 }
 
 Value TargetInfo::programId(Location loc, ConversionPatternRewriter &rewriter,
-                           ModuleOp moduleOp, int axis) const {
+                            ModuleOp moduleOp, int axis) const {
   return LLVM::AMD::llGetPid(loc, rewriter, moduleOp, axis);
 }
 
@@ -85,5 +85,8 @@ bool TargetInfo::processReplicaUsingStMatrix(
     ArrayRef<unsigned> outOrd, unsigned accumNumReplicates) const {
   return false;
 }
+
+void TargetInfo::printf(Value msg, ValueRange args,
+                        ConversionPatternRewriter &rewriter) const {}
 
 } // namespace AMD
