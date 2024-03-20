@@ -314,7 +314,8 @@ bool TargetInfo::processReplicaUsingStMatrix(
   return false;
 }
 
-void TargetInfo::printf(Value msg, ValueRange args,
+void TargetInfo::printf(Value formatStrStart, int /*formatStrByteCount*/,
+                        ValueRange args,
                         ConversionPatternRewriter &rewriter) const {
   auto *ctx = rewriter.getContext();
   Type ptr = ptr_ty(ctx);
@@ -352,7 +353,7 @@ void TargetInfo::printf(Value msg, ValueRange args,
     bufferPtr = bitcast(allocated, ptr);
   }
 
-  SmallVector<Value> operands{msg, bufferPtr};
+  SmallVector<Value> operands{formatStrStart, bufferPtr};
   call(funcOp, operands);
 }
 

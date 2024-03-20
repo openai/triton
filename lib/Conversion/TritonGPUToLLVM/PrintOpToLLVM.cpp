@@ -161,10 +161,13 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       // construct the format string at the same time as we populate
       // printfOperands.  But we don't want to create BLOCK_SIZE duplicate
       // strings, so we cache the Value.
+      int formatStrByteCount = 0;
       if (i == 0) {
-        formatStrValue = llPrintf(formatStr, printfOperands, rewriter);
+        formatStrValue =
+            llPrintf(formatStr, printfOperands, rewriter, &formatStrByteCount);
       } else {
-        targetInfo.printf(formatStrValue, printfOperands, rewriter);
+        targetInfo.printf(formatStrValue, formatStrByteCount, printfOperands,
+                          rewriter);
       }
     }
   }
@@ -219,7 +222,8 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
 
   // Returns a Value for the format string, which you can reuse.
   Value llPrintf(StringRef msg, ValueRange args,
-                 ConversionPatternRewriter &rewriter) const {
+                 ConversionPatternRewriter &rewriter,
+                 int *formatStrByteCount = nullptr) const {
     assert(!msg.empty() && "printf with empty string not supported");
     llvm::SmallString<64> msgNewline(msg);
     msgNewline.push_back('\n');
@@ -227,7 +231,9 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     Value msgValue =
         LLVM::addStringToModule(UnknownLoc::get(rewriter.getContext()),
                                 rewriter, "printfFormat_", msgNewline);
-    targetInfo.printf(msgValue, args, rewriter);
+    targetInfo.printf(msgValue, msgNewline.size_in_bytes(), args, rewriter);
+    if (formatStrByteCount)
+      *formatStrByteCount = msgNewline.size_in_bytes();
     return msgValue;
   }
 
