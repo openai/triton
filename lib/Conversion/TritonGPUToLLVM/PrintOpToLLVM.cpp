@@ -41,41 +41,43 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       os << "pid (" << getFormatSubstr(pid[0]) << ", "
          << getFormatSubstr(pid[1]) << ", " << getFormatSubstr(pid[2]) << ")%s";
       llPrintf(formatStr, {pid[0], pid[1], pid[2], prefixStr}, rewriter);
-    } else {
-      for (size_t i = 0; i < op.getNumOperands(); i++) {
-        // Elements of the tensor that are resident in this GPU thread.
-        auto elems = unpackLLElements(loc, adaptor.getOperands()[i], rewriter);
+      rewriter.eraseOp(op);
+      return success();
+    }
 
-        // Get the indices of `elems` within the tensor.  Note that if `elems`
-        // has an "interesting" layout, then these will not be in any
-        // particularly nice order.
+    for (size_t i = 0; i < op.getNumOperands(); i++) {
+      // Elements of the tensor that are resident in this GPU thread.
+      auto elems = unpackLLElements(loc, adaptor.getOperands()[i], rewriter);
 
-        // Extract the shape of the tensor being printed and use it to figure
-        // out how many digits we need for each of the dimensions.
-        SmallVector<int, 8> dimWidths;
-        SmallVector<SmallVector<Value>> indices;
-        if (auto rankedTy =
-                op.getOperand(i).getType().dyn_cast<RankedTensorType>()) {
-          indices = emitIndices(loc, rewriter, rankedTy.getEncoding(), rankedTy,
-                                true);
-          for (int64_t dim : rankedTy.getShape()) {
-            if (dim > 0) {
-              dimWidths.push_back(static_cast<int>(std::ceil(std::log10(dim))));
-            } else {
-              dimWidths.push_back(0);
-            }
+      // Get the indices of `elems` within the tensor.  Note that if `elems`
+      // has an "interesting" layout, then these will not be in any
+      // particularly nice order.
+
+      // Extract the shape of the tensor being printed and use it to figure
+      // out how many digits we need for each of the dimensions.
+      SmallVector<int, 8> dimWidths;
+      SmallVector<SmallVector<Value>> indices;
+      if (auto rankedTy =
+              op.getOperand(i).getType().dyn_cast<RankedTensorType>()) {
+        indices =
+            emitIndices(loc, rewriter, rankedTy.getEncoding(), rankedTy, true);
+        for (int64_t dim : rankedTy.getShape()) {
+          if (dim > 0) {
+            dimWidths.push_back(static_cast<int>(std::ceil(std::log10(dim))));
+          } else {
+            dimWidths.push_back(0);
           }
-        } else {
-          // We're printing a scalar.
-          assert(elems.size() == 1);
-          indices.push_back({});
         }
+      } else {
+        // We're printing a scalar.
+        assert(elems.size() == 1);
+        indices.push_back({});
+      }
 
-        if (!elems.empty()) {
-          printTensor(prefixStr, /*operand=*/i,
-                      /*numOperands=*/op.getNumOperands(), elems, pid, indices,
-                      dimWidths, op.getHex(), rewriter);
-        }
+      if (!elems.empty()) {
+        printTensor(prefixStr, /*operand=*/i,
+                    /*numOperands=*/op.getNumOperands(), elems, pid, indices,
+                    dimWidths, op.getHex(), rewriter);
       }
     }
     rewriter.eraseOp(op);
