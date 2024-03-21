@@ -13,12 +13,12 @@ namespace {
 // nb. We call the trick TF32x3 as C++ disallows varaibles starting with numbers
 // Implement 3xTF32 trick https://github.com/NVIDIA/cutlass/discussions/385
 // For a, b f32
-// dot(a, b, f32Backend="tf32x3") ->
+// dot(a, b, inputPrecision="tf32x3") ->
 //  let aBig = f32ToTF32(a), aSmall = a - aBig;
 //  let bBig = f32ToTF32(b), bSmall = b - bBig;
-//  dot(aSmall, bBig, f32Backend="tf32") +
-//  dot(aBig, bSmall, f32Backend="tf32") +
-//  dot(aBig, bBig, f32Backend="tf32")
+//  dot(aSmall, bBig, inputPrecision="tf32") +
+//  dot(aBig, bSmall, inputPrecision="tf32") +
+//  dot(aBig, bBig, inputPrecision="tf32")
 class TF32x3 : public OpRewritePattern<tt::DotOp> {
 public:
   using OpRewritePattern::OpRewritePattern;
@@ -33,7 +33,7 @@ public:
           .isF32();
     };
 
-    if (!(dotOp.getF32Backend() == tt::F32Backend::TF32x3 &&
+    if (!(dotOp.getInputPrecision() == tt::InputPrecision::TF32x3 &&
           isF32(dotOp.getA()) && isF32(dotOp.getB()))) {
       return failure();
     }
@@ -52,7 +52,7 @@ public:
     };
     auto dot = [&](Value a, Value b, Value c) -> Value {
       return rewriter.create<tt::DotOp>(dotOp->getLoc(), c.getType(), a, b, c,
-                                        tt::F32Backend::TF32,
+                                        tt::InputPrecision::TF32,
                                         dotOp.getMaxNumImpreciseAcc());
     };
 

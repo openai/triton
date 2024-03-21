@@ -218,7 +218,7 @@ public:
                                            rewriter.getF32FloatAttr(0)));
     rewriter.replaceOpWithNewOp<DotOp>(op, expandLhsOp.getSrc(),
                                        expandRhsOp.getSrc(), newAcc,
-                                       F32Backend::TF32, 0);
+                                       InputPrecision::TF32, 0);
     return success();
   }
 };

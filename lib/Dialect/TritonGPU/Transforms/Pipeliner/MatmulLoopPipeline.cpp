@@ -1163,7 +1163,7 @@ void triton::asyncLaunchDots(scf::ForOp forOp) {
       builder.setInsertionPoint(dotOp);
       builder.replaceOpWithNewOp<ttng::DotAsyncOp>(
           dotOp, dotOp.getA(), dotOp.getB(), dotOp.getC(),
-          dotOp.getF32Backend(), dotOp.getMaxNumImpreciseAcc());
+          dotOp.getInputPrecision(), dotOp.getMaxNumImpreciseAcc());
     }
   }
 

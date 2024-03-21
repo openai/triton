@@ -337,7 +337,7 @@ public:
     a = rewriter.create<ttg::ConvertLayoutOp>(a.getLoc(), newAType, a);
     b = rewriter.create<ttg::ConvertLayoutOp>(b.getLoc(), newBType, b);
     auto newDot = rewriter.create<tt::DotOp>(dotOp.getLoc(), newAcc.getType(),
-                                             a, b, newAcc, dotOp.getF32Backend(),
+                                             a, b, newAcc, dotOp.getInputPrecision(),
                                              dotOp.getMaxNumImpreciseAcc());
 
     Value dotOutput =
@@ -478,7 +478,7 @@ public:
     a = rewriter.create<ttg::ConvertLayoutOp>(a.getLoc(), newAType, a);
     b = rewriter.create<ttg::ConvertLayoutOp>(b.getLoc(), newBType, b);
     auto newDot = rewriter.create<tt::DotOp>(dotOp.getLoc(), newRetType, a, b,
-                                             newAcc, dotOp.getF32Backend(),
+                                             newAcc, dotOp.getInputPrecision(),
                                              dotOp.getMaxNumImpreciseAcc());
 
     Value dotOutput = convertAndCastTensor(

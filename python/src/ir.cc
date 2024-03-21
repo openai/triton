@@ -191,10 +191,10 @@ void init_triton_ir(py::module &&m) {
       .value("NONE", PropagateNan::NONE)
       .value("ALL", PropagateNan::ALL);
 
-  py::enum_<F32Backend>(m, "F32BACKEND", py::module_local())
-      .value("TF32", F32Backend::TF32)
-      .value("TF32x3", F32Backend::TF32x3)
-      .value("IEEE", F32Backend::IEEE)
+  py::enum_<InputPrecision>(m, "INPUT_PRECISION", py::module_local())
+      .value("TF32", InputPrecision::TF32)
+      .value("TF32x3", InputPrecision::TF32x3)
+      .value("IEEE", InputPrecision::IEEE)
       .export_values();
 
   py::class_<MLIRContext>(m, "context", py::module_local()).def(py::init<>());
@@ -1377,9 +1377,9 @@ void init_triton_ir(py::module &&m) {
            })
       .def("create_dot",
            [](TritonOpBuilder &self, mlir::Value &a, mlir::Value &b,
-              mlir::Value &c, F32Backend f32Backend,
+              mlir::Value &c, InputPrecision inputPrecision,
               int maxNumImpreciseAcc) -> mlir::Value {
-             return self.create<DotOp>(c.getType(), a, b, c, f32Backend,
+             return self.create<DotOp>(c.getType(), a, b, c, inputPrecision,
                                        maxNumImpreciseAcc);
            })
       .def("create_floor",

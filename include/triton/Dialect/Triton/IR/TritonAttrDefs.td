@@ -107,9 +107,9 @@ def TT_PropagateNanAttr : I32EnumAttr<
     let cppNamespace = "::mlir::triton";
 }
 
-// F32Backend
-def TT_F32BackendAttr : I32EnumAttr<
-    "F32Backend", "",
+// InputPrecision
+def TT_InputPrecisionAttr : I32EnumAttr<
+    "InputPrecision", "",
     [
       I32EnumAttrCase<"TF32", 0, "tf32">,
       I32EnumAttrCase<"TF32x3", 1, "tf32x3">,

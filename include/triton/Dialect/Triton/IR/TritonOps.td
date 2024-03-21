@@ -566,7 +566,7 @@ def TT_DotOp : TT_Op<"dot", [Pure,
     let summary = "dot";
 
     let description = [{
-        $d = matrix_multiply($a, $b) + $c. $f32Backend describes how to exercise the TC
+        $d = matrix_multiply($a, $b) + $c. $inputPrecision describes how to exercise the TC
         when the inputs are f32. It can be one of: tf32, tf32x3, ieee.
         tf32: use TC with tf32 ops.
         tf32x3: implement the 3xTF32 trick. For more info see the pass in F32DotTC.cpp
@@ -578,7 +578,7 @@ def TT_DotOp : TT_Op<"dot", [Pure,
       TT_TensorOrMemDesc:$a,
       TT_TensorOrMemDesc:$b,
       TT_FpIntTensor:$c,
-      TT_F32BackendAttr:$f32Backend,
+      TT_InputPrecisionAttr:$inputPrecision,
       I32Attr:$maxNumImpreciseAcc);
 
     let results = (outs TT_FpIntTensor:$d);

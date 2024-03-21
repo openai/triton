@@ -2866,7 +2866,7 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
     @triton.jit
     def kernel(X, stride_xm, stride_xk, Y, stride_yk, stride_yn, W, stride_wn, stride_wl, Z, stride_zm, stride_zn,
                BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, ADD_MATRIX: tl.constexpr,
-               ADD_ROWS: tl.constexpr, ADD_COLS: tl.constexpr, F32_BACKEND: tl.constexpr, DO_SOFTMAX: tl.constexpr,
+               ADD_ROWS: tl.constexpr, ADD_COLS: tl.constexpr, INPUT_PRECISION: tl.constexpr, DO_SOFTMAX: tl.constexpr,
                CHAIN_DOT: tl.constexpr, COL_A: tl.constexpr, COL_B: tl.constexpr, out_dtype: tl.constexpr = tl.float32):
         off_m = tl.arange(0, BLOCK_M)
         off_n = tl.arange(0, BLOCK_N)
@@ -2878,7 +2878,7 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
         Zs = Z + off_m[:, None] * stride_zm + off_n[None, :] * stride_zn
         x = tl.load(Xs)
         y = tl.load(Ys)
-        z = tl.dot(x, y, input_precision=F32_BACKEND, out_dtype=out_dtype)
+        z = tl.dot(x, y, input_precision=INPUT_PRECISION, out_dtype=out_dtype)
         if ADD_MATRIX:
             z += tl.load(Zs)
         if ADD_ROWS:
@@ -2895,7 +2895,7 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
             z = num / den[:, None]
         if CHAIN_DOT:
             w = tl.load(Ws)
-            z = tl.dot(z.to(w.dtype), w, input_precision=F32_BACKEND, out_dtype=out_dtype)
+            z = tl.dot(z.to(w.dtype), w, input_precision=INPUT_PRECISION, out_dtype=out_dtype)
         tl.store(Zs, z)
 
     # input
@@ -2944,7 +2944,7 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
                          COL_B=col_b, BLOCK_M=M, BLOCK_K=K, BLOCK_N=N, ADD_MATRIX=epilogue == 'add-matrix',
                          ADD_ROWS=epilogue == 'add-rows', ADD_COLS=epilogue == 'add-cols',
                          DO_SOFTMAX=epilogue == 'softmax', CHAIN_DOT=epilogue == 'chain-dot',
-                         F32_BACKEND=input_precision, num_warps=num_warps, num_ctas=num_ctas, out_dtype=out_dtype)
+                         INPUT_PRECISION=input_precision, num_warps=num_warps, num_ctas=num_ctas, out_dtype=out_dtype)
 
     if epilogue == 'softmax' and (in_dtype != 'float32' or input_precision == "tf32"):
         if not is_cuda():
@@ -3061,7 +3061,7 @@ def test_dot3d(B, num_warps, M, N, K, in_dtype_str, out_dtype_str, device):
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
-        F32_BACKEND: tl.constexpr,
+        INPUT_PRECISION: tl.constexpr,
         out_dtype: tl.constexpr = tl.float32,
     ):
         startm = tl.program_id(0) * BLOCK_M
@@ -3076,7 +3076,7 @@ def test_dot3d(B, num_warps, M, N, K, in_dtype_str, out_dtype_str, device):
             None, None, :] * stride_kn
         q = tl.load(q_ptrs)
         k = tl.load(k_ptrs)
-        qk = tl.dot(q, k, input_precision=F32_BACKEND, out_dtype=out_dtype)
+        qk = tl.dot(q, k, input_precision=INPUT_PRECISION, out_dtype=out_dtype)
         o_ptrs = o_ptr + offs_b[:, None, None] * stride_ob + offs_m[None, :, None] * stride_om + offs_n[
             None, None, :] * stride_on
         tl.store(o_ptrs, qk)
@@ -3125,7 +3125,7 @@ def test_dot3d(B, num_warps, M, N, K, in_dtype_str, out_dtype_str, device):
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
         BLOCK_K=BLOCK_K,
-        F32_BACKEND="tf32" if in_dtype_str == 'float32' else "ieee",
+        INPUT_PRECISION="tf32" if in_dtype_str == 'float32' else "ieee",
         out_dtype=out_dtype,
         num_warps=num_warps,
     )
