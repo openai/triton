@@ -39,8 +39,9 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       std::string formatStr;
       llvm::raw_string_ostream os(formatStr);
       os << "pid (" << getFormatSubstr(pid[0]) << ", "
-         << getFormatSubstr(pid[1]) << ", " << getFormatSubstr(pid[2]) << ")%s";
-      llPrintf(formatStr, {pid[0], pid[1], pid[2], prefixStr}, rewriter);
+         << getFormatSubstr(pid[1]) << ", " << getFormatSubstr(pid[2]) << ")"
+         << op.getPrefix();
+      llPrintf(formatStr, {pid[0], pid[1], pid[2]}, rewriter);
       rewriter.eraseOp(op);
       return success();
     }
@@ -75,7 +76,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
       }
 
       if (!elems.empty()) {
-        printTensor(prefixStr, /*operand=*/i,
+        printTensor(op.getPrefix(), /*operand=*/i,
                     /*numOperands=*/op.getNumOperands(), elems, pid, indices,
                     dimWidths, op.getHex(), rewriter);
       }
@@ -84,7 +85,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
     return success();
   }
 
-  void printTensor(Value prefixStr, size_t operand, size_t numOperands,
+  void printTensor(StringRef prefixStr, size_t operand, size_t numOperands,
                    ArrayRef<Value> elems, std::array<Value, 3> pid,
                    ArrayRef<SmallVector<Value>> indices,
                    ArrayRef<int> dimWidths, bool hex,
@@ -144,10 +145,7 @@ struct PrintOpConversion : public ConvertOpToLLVMPattern<triton::PrintOp> {
                               /*width=*/dimWidths[dim]);
         printfOperands.push_back(index[dim]);
       }
-      os << ")";
-
-      os << "%s";
-      printfOperands.push_back(prefixStr);
+      os << ")" << prefixStr;
 
       if (numOperands > 1) {
         os << "(operand " << operand << ") ";
