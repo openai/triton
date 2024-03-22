@@ -103,6 +103,7 @@ using namespace mlir::triton;
 #define i32_ty rewriter.getIntegerType(32)
 #define i64_ty rewriter.getIntegerType(64)
 #define ui32_ty rewriter.getIntegerType(32, false)
+#define ui64_ty rewriter.getIntegerType(64, false)
 #define f16_ty rewriter.getF16Type()
 #define bf16_ty rewriter.getBF16Type()
 #define i8_ty rewriter.getIntegerType(8)

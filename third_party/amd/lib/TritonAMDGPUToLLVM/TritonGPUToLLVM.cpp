@@ -233,6 +233,8 @@ struct ConvertTritonAMDGPUToLLVM
 
     mlir::cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
                                                           patterns);
+    mlir::triton::populatePrintOpToLLVMPattern(typeConverter, patterns,
+                                               targetInfo, benefit);
     if (failed(applyPartialConversion(mod, convTarget, std::move(patterns)))) {
       return signalPassFailure();
     }

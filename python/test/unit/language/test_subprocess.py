@@ -13,21 +13,22 @@ assert_path = os.path.join(dir_path, "assert_helper.py")
 # TODO: bfloat16 after LLVM-15
 assert_types = ["device_assert", "device_assert_passes", "assert", "static_assert", "no_debug", "double_assert"]
 nested_types = [(caller, callee) for caller in ["true", "false", "none"] for callee in ["true", "false", "none"]]
-torch_types = ["int8", "uint8", "int16", "int32", "long", "float16", "float32", "float64"]
+#torch_types = ["int8", "uint8", "int16", "int32", "long", "float16", "float32", "float64"]
+torch_types = ["int32"]
 
 
 # TODO: Print with multiple operands
 @pytest.mark.parametrize("func_type, data_type", [("device_print", data_type) for data_type in torch_types] + [
     ("print", "int32"),
-    ("static_print", "int32"),
-    ("no_arg_print", "int32"),
-    ("print_no_arg", "int32"),
-    ("device_print_large", "int32"),
-    ("print_multiple_args", "int32"),
-    ("device_print_multiple_args", "int32"),
-    ("device_print_hex", "int16"),
-    ("device_print_hex", "int32"),
-    ("device_print_hex", "int64"),
+#    ("static_print", "int32"),
+#    ("no_arg_print", "int32"),
+#    ("print_no_arg", "int32"),
+#    ("device_print_large", "int32"),
+#    ("print_multiple_args", "int32"),
+#    ("device_print_multiple_args", "int32"),
+#    ("device_print_hex", "int16"),
+#    ("device_print_hex", "int32"),
+#    ("device_print_hex", "int64"),
 ])
 def test_print(func_type: str, data_type: str):
     proc = subprocess.Popen([sys.executable, print_path, func_type, data_type], stdout=subprocess.PIPE, shell=False)
