@@ -108,10 +108,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-covered-switch-default -fvi
 include_directories(".")
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${LLVM_INCLUDE_DIRS})
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_BINARY_DIR}/include) # Tablegen'd files
-include_directories(${PROJECT_SOURCE_DIR}/third_party)
-include_directories(${PROJECT_BINARY_DIR}/third_party) # Tablegen'd files
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/include) # Tablegen'd files
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party) # Tablegen'd files
 
 # link_directories(${LLVM_LIBRARY_DIR})
 add_subdirectory(include)
@@ -131,6 +131,87 @@ endif()
 
 # -----
 
+if (DEFINED TRITON_PLUGIN_DIRS)
+  foreach(PLUGIN_DIR ${TRITON_PLUGIN_DIRS})
+    # Read the plugin name under dir/backend/name.conf
+    cmake_path(APPEND PLUGIN_DIR "backend" "name.conf" OUTPUT_VARIABLE PLUGIN_NAME_PATH)
+    file(READ ${PLUGIN_NAME_PATH} PLUGIN_NAME)
+    string(STRIP ${PLUGIN_NAME} PLUGIN_NAME)
+
+    list(APPEND TRITON_PLUGIN_NAMES ${PLUGIN_NAME})
+
+    # Include the plugin as part of the build, placing the build output under
+    # ${TRITON_BINARY_DIR}/third_party/${PLUGIN_NAME}
+    cmake_path(APPEND TRITON_BINARY_DIR "third_party" ${PLUGIN_NAME} OUTPUT_VARIABLE PLUGIN_DIR_BUILD_OUTPUT)
+    message(STATUS "Building plugin '${PLUGIN_NAME}' from ${PLUGIN_DIR} with output ${PLUGIN_DIR_BUILD_OUTPUT}")
+    add_subdirectory(${PLUGIN_DIR} ${PLUGIN_DIR_BUILD_OUTPUT})
+  endforeach()
+endif()
+
+foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
+  add_subdirectory(third_party/${CODEGEN_BACKEND})
+endforeach()
+
+
+get_property(triton_libs GLOBAL PROPERTY TRITON_LIBS)
+get_property(triton_plugins GLOBAL PROPERTY TRITON_PLUGINS)
+set(TRITON_LIBRARIES
+        ${triton_libs}
+        ${triton_plugins}
+
+        # mlir
+        MLIRAMDGPUDialect
+        MLIRNVVMDialect
+        MLIRNVVMToLLVMIRTranslation
+        MLIRGPUToNVVMTransforms
+        MLIRGPUToGPURuntimeTransforms
+        MLIRGPUTransforms
+        MLIRIR
+        MLIRControlFlowToLLVM
+        MLIRBytecodeWriter
+        MLIRPass
+        MLIRTransforms
+        MLIRLLVMDialect
+        MLIRSupport
+        MLIRTargetLLVMIRExport
+        MLIRMathToLLVM
+        MLIRROCDLToLLVMIRTranslation
+        MLIRGPUDialect
+        MLIRSCFToControlFlow
+        MLIRIndexToLLVM
+        MLIRGPUToROCDLTransforms
+
+        # LLVM
+        LLVMPasses
+        LLVMNVPTXCodeGen
+        # LLVMNVPTXAsmPrinter
+        LLVMAMDGPUCodeGen
+        LLVMAMDGPUAsmParser
+
+)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+  list(APPEND TRITON_LIBRARIES
+          LLVMAArch64CodeGen
+          LLVMAArch64AsmParser
+  )
+else()
+  list(APPEND TRITON_LIBRARIES
+          LLVMX86CodeGen
+          LLVMX86AsmParser
+  )
+endif()
+
+# Define triton library
+string(JOIN "," TRITON_BACKENDS_TUPLE ${TRITON_CODEGEN_BACKENDS})
+
+if (DEFINED TRITON_PLUGIN_NAMES)
+  string(JOIN "," TRITON_BACKENDS_TUPLE ${TRITON_BACKENDS_TUPLE} ${TRITON_PLUGIN_NAMES})
+endif()
+
+message(STATUS "Triton backends tuple: ${TRITON_BACKENDS_TUPLE}")
+
+set(TRITON_BACKENDS_TUPLE "(${TRITON_BACKENDS_TUPLE})")
+add_compile_definitions(TRITON_BACKENDS_TUPLE=${TRITON_BACKENDS_TUPLE})
 # ------
 if(TRITON_BUILD_PYTHON_MODULE)
   message(STATUS "Adding Python module")
@@ -147,87 +228,6 @@ if(TRITON_BUILD_PYTHON_MODULE)
     add_link_options(${Python3_LINK_OPTIONS})
   endif()
 
-  if (DEFINED TRITON_PLUGIN_DIRS)
-    foreach(PLUGIN_DIR ${TRITON_PLUGIN_DIRS})
-      # Read the plugin name under dir/backend/name.conf
-      cmake_path(APPEND PLUGIN_DIR "backend" "name.conf" OUTPUT_VARIABLE PLUGIN_NAME_PATH)
-      file(READ ${PLUGIN_NAME_PATH} PLUGIN_NAME)
-      string(STRIP ${PLUGIN_NAME} PLUGIN_NAME)
-
-      list(APPEND TRITON_PLUGIN_NAMES ${PLUGIN_NAME})
-
-      # Include the plugin as part of the build, placing the build output under
-      # ${TRITON_BINARY_DIR}/third_party/${PLUGIN_NAME}
-      cmake_path(APPEND TRITON_BINARY_DIR "third_party" ${PLUGIN_NAME} OUTPUT_VARIABLE PLUGIN_DIR_BUILD_OUTPUT)
-      message(STATUS "Building plugin '${PLUGIN_NAME}' from ${PLUGIN_DIR} with output ${PLUGIN_DIR_BUILD_OUTPUT}")
-      add_subdirectory(${PLUGIN_DIR} ${PLUGIN_DIR_BUILD_OUTPUT})
-    endforeach()
-  endif()
-
-  foreach(CODEGEN_BACKEND ${TRITON_CODEGEN_BACKENDS})
-    add_subdirectory(third_party/${CODEGEN_BACKEND})
-  endforeach()
-
-
-  get_property(triton_libs GLOBAL PROPERTY TRITON_LIBS)
-  get_property(triton_plugins GLOBAL PROPERTY TRITON_PLUGINS)
-  set(TRITON_LIBRARIES
-    ${triton_libs}
-    ${triton_plugins}
-
-    # mlir
-    MLIRAMDGPUDialect
-    MLIRNVVMDialect
-    MLIRNVVMToLLVMIRTranslation
-    MLIRGPUToNVVMTransforms
-    MLIRGPUToGPURuntimeTransforms
-    MLIRGPUTransforms
-    MLIRIR
-    MLIRControlFlowToLLVM
-    MLIRBytecodeWriter
-    MLIRPass
-    MLIRTransforms
-    MLIRLLVMDialect
-    MLIRSupport
-    MLIRTargetLLVMIRExport
-    MLIRMathToLLVM
-    MLIRROCDLToLLVMIRTranslation
-    MLIRGPUDialect
-    MLIRSCFToControlFlow
-    MLIRIndexToLLVM
-    MLIRGPUToROCDLTransforms
-
-    # LLVM
-    LLVMPasses
-    LLVMNVPTXCodeGen
-    # LLVMNVPTXAsmPrinter
-    LLVMAMDGPUCodeGen
-    LLVMAMDGPUAsmParser
-
-  )
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-      list(APPEND TRITON_LIBRARIES
-          LLVMAArch64CodeGen
-          LLVMAArch64AsmParser
-      )
-  else()
-      list(APPEND TRITON_LIBRARIES
-          LLVMX86CodeGen
-          LLVMX86AsmParser
-      )
-  endif()
-
-  # Define triton library
-  string(JOIN "," TRITON_BACKENDS_TUPLE ${TRITON_CODEGEN_BACKENDS})
-
-  if (DEFINED TRITON_PLUGIN_NAMES)
-    string(JOIN "," TRITON_BACKENDS_TUPLE ${TRITON_BACKENDS_TUPLE} ${TRITON_PLUGIN_NAMES})
-  endif()
-
-  message(STATUS "Triton backends tuple: ${TRITON_BACKENDS_TUPLE}")
-
-  set(TRITON_BACKENDS_TUPLE "(${TRITON_BACKENDS_TUPLE})")
-  add_compile_definitions(TRITON_BACKENDS_TUPLE=${TRITON_BACKENDS_TUPLE})
   add_library(triton SHARED ${PYTHON_SRC_PATH}/main.cc
                   ${PYTHON_SRC_PATH}/ir.cc
                   ${PYTHON_SRC_PATH}/passes.cc
