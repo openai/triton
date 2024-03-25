@@ -95,8 +95,16 @@ def randint4x(seed, offset, n_rounds: tl.constexpr = N_ROUNDS_DEFAULT):
     :param offsets: The offsets to generate random numbers for.
     """
     # _0 = tl.zeros(offset.shape, offset.dtype)
-    _0 = offset * 0
-    return philox(seed, offset, _0, _0, _0, n_rounds)
+
+    offset_lo = offset.to(tl.uint32)
+    _0 = offset_lo * 0
+
+    if tl.constexpr(offset.dtype.primitive_bitwidth) > 32:
+        offset_hi = (offset >> 32).to(tl.uint32)
+    else:
+        offset_hi = _0
+
+    return philox(seed, offset_lo, offset_hi, _0, _0, n_rounds)
 
 
 # -------------------
