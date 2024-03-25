@@ -371,7 +371,8 @@ void init_triton_ir(py::module &&m) {
              std::string str;
              llvm::raw_string_ostream os(str);
              auto printingFlags = OpPrintingFlags();
-             printingFlags.enableDebugInfo();
+             bool dumpLoc = !::triton::tools::getBoolEnv("DISABLE_LOC_DUMP");
+             if (dumpLoc) printingFlags.enableDebugInfo();
              self->print(os, printingFlags);
              return str;
            })
@@ -436,7 +437,8 @@ void init_triton_ir(py::module &&m) {
              std::string str;
              llvm::raw_string_ostream os(str);
              auto printingFlags = OpPrintingFlags();
-             printingFlags.enableDebugInfo();
+             bool dumpLoc = !::triton::tools::getBoolEnv("DISABLE_LOC_DUMP");
+             if (dumpLoc) printingFlags.enableDebugInfo();
              self.print(os, printingFlags);
              return str;
            })
@@ -484,7 +486,8 @@ void init_triton_ir(py::module &&m) {
           throw std::runtime_error("Parse MLIR file failed.");
         // locations are incompatible with ptx < 7.5 !
         module->walk([](Operation *op) {
-          op->setLoc(UnknownLoc::get(op->getContext()));
+          if (!::triton::tools::getBoolEnv("USE_TTGIR_LOC"))
+            op->setLoc(UnknownLoc::get(op->getContext()));
         });
 
         return module->clone();
