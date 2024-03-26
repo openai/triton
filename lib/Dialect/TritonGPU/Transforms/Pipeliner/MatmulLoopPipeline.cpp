@@ -94,7 +94,7 @@ createAsyncCopy(scf::ForOp &forOp, tt::LoadOp loadOp, Value alloc,
     };
     src = convertBlockLayout(src);
     if (mask)
-        mask = convertBlockLayout(mask);
+      mask = convertBlockLayout(mask);
   }
 
   tt::MemDescType allocTy = alloc.getType().cast<tt::MemDescType>();
