@@ -21,7 +21,7 @@ module attributes {"triton_gpu.compute-capability" = 90 : i32, "triton_gpu.num-c
     // CHECK-SAME: -> tensor<64x256xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #[[WMAA_0]]
     // CHECK: %[[DOT0_WMMA_RES:.+]] = tt.dot %[[DOT0_OP_A]], %[[DOT0_OP_B]], %[[DOT0_OP_C]]
     // CHECK-SAME: -> tensor<128x256xf32, #[[WMAA_0]]
-    %4 = tt.dot %0, %1, %3 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x256xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<128x256xf32, #blocked>
+    %4 = tt.dot %0, %1, %3 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x256xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<128x256xf32, #blocked>
     // CHECK: triton_gpu.convert_layout %[[DOT0_WMMA_RES]]
     // CHECK-SAME: -> tensor<128x256xf32, #[[DOT_OP_PARENT]]>
     tt.store %2, %4 {cache = 1 : i32, evict = 1 : i32} : tensor<128x256xf32, #blocked>
@@ -43,7 +43,7 @@ module attributes {"triton_gpu.compute-capability" = 90 : i32, "triton_gpu.num-c
     // CHECK-SAME: -> tensor<64x32xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #[[WMAA_1]]
     // CHECK: %[[DOT1_WMMA_RES:.+]] = tt.dot %[[DOT1_OP_A]], %[[DOT1_OP_B]], %[[DOT1_OP_C]]
     // CHECK-SAME: -> tensor<32x32xf16, #[[WMAA_1]]
-    %4 = tt.dot %0, %1, %3 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<32x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x32xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<32x32xf16, #blocked>
+    %4 = tt.dot %0, %1, %3 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<32x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #blocked}>> * tensor<64x32xf16, #triton_gpu.dot_op<{opIdx = 1, parent = #blocked}>> -> tensor<32x32xf16, #blocked>
     // CHECK: triton_gpu.convert_layout %[[DOT1_WMMA_RES]]
     // CHECK-SAME: -> tensor<32x32xf16, #[[DOT_OP_PARENT]]>
     tt.store %2, %4 {cache = 1 : i32, evict = 1 : i32} : tensor<32x32xf16, #blocked>

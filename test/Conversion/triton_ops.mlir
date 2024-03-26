@@ -163,13 +163,13 @@ tt.func @dot_ops_infer(%ptr: !tt.ptr<f32>, %v : f32) {
   %zero1x1 = arith.constant dense<0.00e+00> : tensor<1x1xf32>
 
   // CHECK: %{{.*}} = tt.dot %{{.*}} -> tensor<128x128xf32>
-  %r1 = tt.dot %v128x32, %v32x128, %zero128x128 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x32xf32> * tensor<32x128xf32> -> tensor<128x128xf32>
+  %r1 = tt.dot %v128x32, %v32x128, %zero128x128 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x32xf32> * tensor<32x128xf32> -> tensor<128x128xf32>
   // CHECK: %{{.*}} = tt.dot %{{.*}} -> tensor<32x32xf32>
-  %r2 = tt.dot %v32x128, %v128x32, %zero32x32 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<32x128xf32> * tensor<128x32xf32> -> tensor<32x32xf32>
+  %r2 = tt.dot %v32x128, %v128x32, %zero32x32 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<32x128xf32> * tensor<128x32xf32> -> tensor<32x32xf32>
   // CHECK: %{{.*}} = tt.dot %{{.*}} -> tensor<128x128xf32>
-  %r3 = tt.dot %v128x1, %v1x128, %zero128x128 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x1xf32> * tensor<1x128xf32> -> tensor<128x128xf32>
+  %r3 = tt.dot %v128x1, %v1x128, %zero128x128 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x1xf32> * tensor<1x128xf32> -> tensor<128x128xf32>
   // CHECK: %{{.*}} = tt.dot %{{.*}} -> tensor<1x1xf32>
-  %r4 = tt.dot %v1x128, %v128x1, %zero1x1 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<1x128xf32> * tensor<128x1xf32> -> tensor<1x1xf32>
+  %r4 = tt.dot %v1x128, %v128x1, %zero1x1 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<1x128xf32> * tensor<128x1xf32> -> tensor<1x1xf32>
 
   %ptr128x128 = tt.splat %ptr : !tt.ptr<f32> -> tensor<128x128x!tt.ptr<f32>>
   %ptr32x32 = tt.splat %ptr : !tt.ptr<f32> -> tensor<32x32x!tt.ptr<f32>>

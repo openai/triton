@@ -128,7 +128,7 @@ TensorCoreType getMmaType(triton::DotOp op) {
     if (aTy.getElementType().isBF16() && bTy.getElementType().isBF16())
       return TensorCoreType::FP32_BF16_BF16_FP32;
     if (aTy.getElementType().isF32() && bTy.getElementType().isF32() &&
-        op.getAllowTF32())
+        op.getInputPrecision() == InputPrecision::TF32)
       return TensorCoreType::FP32_TF32_TF32_FP32;
   } else if (dTy.getElementType().isInteger(32)) {
     if (aTy.getElementType().isInteger(8) && bTy.getElementType().isInteger(8))

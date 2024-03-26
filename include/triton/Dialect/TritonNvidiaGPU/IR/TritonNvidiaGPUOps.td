@@ -85,13 +85,13 @@ def TTNG_DotAsyncOp : TTNG_Op<"dot_async", [Pure,
     let summary = "dot async";
 
     let description = [{
-        $d = matrix_multiply($a, $b) + $c
+        $d = matrix_multiply($a, $b) + $c. For docs on InputPrecisionAttr, see TT_DotOp
     }];
 
     let arguments = (ins TT_TensorOrMemDesc:$a,
                          TT_TensorOrMemDesc:$b,
                          TT_FpIntTensor:$c,
-                         BoolAttr:$allowTF32,
+                         TT_InputPrecisionAttr:$inputPrecision,
                          I32Attr:$maxNumImpreciseAcc);
 
     let results = (outs TT_FpIntTensor:$d);

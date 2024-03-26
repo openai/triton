@@ -217,7 +217,8 @@ public:
         rewriter.create<arith::ConstantOp>(op->getLoc(),
                                            rewriter.getF32FloatAttr(0)));
     rewriter.replaceOpWithNewOp<DotOp>(op, expandLhsOp.getSrc(),
-                                       expandRhsOp.getSrc(), newAcc, true, 0);
+                                       expandRhsOp.getSrc(), newAcc,
+                                       InputPrecision::TF32, 0);
     return success();
   }
 };

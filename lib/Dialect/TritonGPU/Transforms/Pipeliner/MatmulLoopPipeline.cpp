@@ -1167,8 +1167,8 @@ void triton::asyncLaunchDots(scf::ForOp forOp) {
     if (isMMAv3Dot(dotOp)) {
       builder.setInsertionPoint(dotOp);
       builder.replaceOpWithNewOp<ttng::DotAsyncOp>(
-          dotOp, dotOp.getA(), dotOp.getB(), dotOp.getC(), dotOp.getAllowTF32(),
-          dotOp.getMaxNumImpreciseAcc());
+          dotOp, dotOp.getA(), dotOp.getB(), dotOp.getC(),
+          dotOp.getInputPrecision(), dotOp.getMaxNumImpreciseAcc());
     }
   }
 

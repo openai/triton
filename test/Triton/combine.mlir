@@ -11,7 +11,7 @@ tt.func @test_combine_dot_add_invalid_pattern() -> (tensor<128x128xf32>, tensor<
     %d = arith.constant dense<3.0> : tensor<128x128xf32>
     %e = arith.constant dense<4.0> : tensor<128x128xf32>
 
-    %dot_out = tt.dot %a, %b, %zero {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
+    %dot_out = tt.dot %a, %b, %zero {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
 
     // CHECK: arith.addf %{{.*}}, %[[d]] : tensor<128x128xf32>
     %res0 = arith.addf %dot_out, %d : tensor<128x128xf32>
@@ -33,9 +33,9 @@ tt.func @test_combine_dot_add_pattern() -> (tensor<128x128xf32>) {
     %zero = arith.constant dense<0.0> : tensor<128x128xf32>
     %d = arith.constant dense<3.0> : tensor<128x128xf32>
 
-    %dot_out = tt.dot %a, %b, %zero {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
+    %dot_out = tt.dot %a, %b, %zero {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
 
-    // CHECK-NEXT: %[[res:.*]] = tt.dot %[[a]], %[[b]], %[[d]] {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
+    // CHECK-NEXT: %[[res:.*]] = tt.dot %[[a]], %[[b]], %[[d]] {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
     // CHECK-NEXT: tt.return %[[res]] : tensor<128x128xf32>
     %res = arith.addf %dot_out, %d : tensor<128x128xf32>
 
@@ -53,9 +53,9 @@ tt.func @test_combine_dot_add_rev_pattern() -> (tensor<128x128xf32>) {
     %zero = arith.constant dense<0.0> : tensor<128x128xf32>
     %d = arith.constant dense<3.0> : tensor<128x128xf32>
 
-    %dot_out = tt.dot %a, %b, %zero {allowTF32 = true, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
+    %dot_out = tt.dot %a, %b, %zero {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32, transA = false, transB = false} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
 
-    // CHECK-NEXT: %[[res:.*]] = tt.dot %[[a]], %[[b]], %[[d]] {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
+    // CHECK-NEXT: %[[res:.*]] = tt.dot %[[a]], %[[b]], %[[d]] {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x128xf32> * tensor<128x128xf32> -> tensor<128x128xf32>
     // CHECK-NEXT: tt.return %[[res]] : tensor<128x128xf32>
     %res = arith.addf %d, %dot_out : tensor<128x128xf32>
 

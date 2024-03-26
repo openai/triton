@@ -46,7 +46,7 @@ tt.func public @matmul_kernel(%arg0: !tt.ptr<f16> {tt.divisibility = 16 : i32}, 
     %55 = tt.load %arg11 {boundaryCheck = array<i32: 1>, cache = 1 : i32, evict = 1 : i32, isVolatile = false, padding = 2 : i32} : !tt.ptr<tensor<128x32xf16>> -> tensor<128x32xf16>
     // CHECK: tt.load %{{.*}}, %{{.*}}, %{{.*}} {cache = 1 : i32, evict = 1 : i32, isVolatile = false} : tensor<32x32xf16>
     %56 = tt.load %arg12 {boundaryCheck = array<i32: 0>, cache = 1 : i32, evict = 1 : i32, isVolatile = false, padding = 2 : i32} : !tt.ptr<tensor<32x32xf16>> -> tensor<32x32xf16>
-    %57 = tt.dot %55, %56, %arg10 {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<128x32xf16> * tensor<32x32xf16> -> tensor<128x32xf32>
+    %57 = tt.dot %55, %56, %arg10 {inputPrecision = 0 : i32, maxNumImpreciseAcc = 0 : i32} : tensor<128x32xf16> * tensor<32x32xf16> -> tensor<128x32xf32>
     // CHECK-NOT: tt.advance
     %58 = tt.advance %arg11, [%c0_i32, %c32_i32] : !tt.ptr<tensor<128x32xf16>>
     // CHECK-NOT: tt.advance

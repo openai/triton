@@ -78,14 +78,14 @@ def _fwd_kernel(Q, K, V, sm_scale,  #
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         if IS_CAUSAL:
             qk = tl.where(offs_m[:, None] >= (start_n + offs_n[None, :]), qk, float("-inf"))
-        qk += tl.dot(q, k, allow_tf32=True)
+        qk += tl.dot(q, k)
         # -- compute scaling constant ---
         m_i_new = tl.maximum(m_i, tl.max(qk, 1))
         alpha = tl.math.exp2(m_i - m_i_new)
         p = tl.math.exp2(qk - m_i_new[:, None])
         # -- scale and update acc --
         acc *= alpha[:, None]
-        acc += tl.dot(p.to(V.dtype.element_ty), v, allow_tf32=True)
+        acc += tl.dot(p.to(V.dtype.element_ty), v)
         # -- update m_i and l_i --
         l_i = l_i * alpha + tl.sum(p, 1)
         m_i = m_i_new
@@ -197,26 +197,26 @@ def _bwd_kernel_one_col_block(Q, K, V, sm_scale, qk_scale,  #
         p = tl.math.exp2(qk - l_i[:, None])
         # compute dv
         do = tl.load(DO_block_ptr)
-        dv += tl.dot(tl.trans(p.to(Q.dtype.element_ty)), do, allow_tf32=True)
+        dv += tl.dot(tl.trans(p.to(Q.dtype.element_ty)), do)
         # compute dp = dot(v, do)
         Di = tl.load(D_ptrs + offs_m_curr)
         # dp = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32) - Di[:, None]
-        dp = tl.dot(do, tl.trans(v), allow_tf32=True)
+        dp = tl.dot(do, tl.trans(v))
         # compute ds = p * (dp - delta[:, None])
         ds = (p * (dp - Di[:, None]) * sm_scale).to(Q.dtype.element_ty)
         # compute dk = dot(ds.T, q)
-        dk += tl.dot(tl.trans(ds), q, allow_tf32=True)
+        dk += tl.dot(tl.trans(ds), q)
         # compute dq
         if not SEQUENCE_PARALLEL:
             dq = tl.load(DQ_block_ptr)
-            dq += tl.dot(ds, k, allow_tf32=True)
+            dq += tl.dot(ds, k)
             tl.store(DQ_block_ptr, dq.to(Q.dtype.element_ty))
         elif SEQUENCE_PARALLEL:
             if MMA_V3:
-                dq = tl.dot(ds, k, allow_tf32=True)
+                dq = tl.dot(ds, k)
             else:
                 # not work with mma v3, because M % 64 != 0
-                dq = tl.trans(tl.dot(tl.trans(k), tl.trans(ds), allow_tf32=True))
+                dq = tl.trans(tl.dot(tl.trans(k), tl.trans(ds)))
             tl.store(DQ_block_ptr, dq.to(Q.dtype.element_ty))
 
         # increment pointers
