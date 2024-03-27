@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import os
 import time
 from typing import Dict
 
@@ -11,19 +12,8 @@ from .errors import OutOfResources
 
 class Autotuner(KernelInterface):
 
-    def __init__(
-        self,
-        fn,
-        arg_names,
-        configs,
-        key,
-        reset_to_zero,
-        restore_value,
-        prune_configs_by: Dict = None,
-        warmup=25,
-        rep=100,
-        print_autotune_stats=False,
-    ):
+    def __init__(self, fn, arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by: Dict = None,
+                 warmup=25, rep=100):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
             'perf_model': performance model used to predicate running time with different configs, returns running time
@@ -78,7 +68,9 @@ class Autotuner(KernelInterface):
         self.fn = fn
         self.num_warmups = warmup
         self.num_reps = rep
-        self.print_autotune_stats = print_autotune_stats
+        self.print_autotune_stats = False
+        if os.getenv("TRITON_PRINT_AUTOTUNING", "0") == "1":
+            self.print_autotune_stats = True
 
     def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -232,8 +224,7 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
-             print_autotune_stats=False):
+def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -270,13 +261,10 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     :type warmup: int
     :param rep: Repetition time (in ms) to pass to benchmarking, defaults to 100.
     :type rep: int
-    :param print_autotune_stats: If set to true, a log message will be printed after each autotune evaluation containing the benchmark time and the selected configuration.
-    :type report: bool
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep,
-                         print_autotune_stats)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep)
 
     return decorator
 
