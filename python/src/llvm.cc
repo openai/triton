@@ -5,6 +5,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -105,8 +106,22 @@ using ret = py::return_value_policy;
 
 void init_triton_llvm(py::module &&m) {
 
+  py::class_<llvm::Metadata, std::unique_ptr<llvm::Metadata, py::nodelete>>(
+      m, "metadata");
+  py::class_<llvm::MDString, std::unique_ptr<llvm::MDString, py::nodelete>,
+             llvm::Metadata>(m, "string_metadata");
+  /*
+      .def(py::init([](LLVMContext &context, const std::string &str) {
+        return llvm::MDString::get(context, str);
+      }));
+      */
+
   py::class_<llvm::LLVMContext>(m, "context", py::module_local())
-      .def(py::init<>());
+      .def(py::init<>())
+      .def("get_string_metadata",
+           [](llvm::LLVMContext &context, const std::string &str) {
+             return llvm::MDString::get(context, str);
+           });
 
   py::class_<llvm::Module::FunctionListType>(m, "function_list")
       .def(
@@ -115,6 +130,13 @@ void init_triton_llvm(py::module &&m) {
             return py::make_iterator(s.begin(), s.end());
           },
           py::keep_alive<0, 1>());
+
+  // Flag behavior. See
+  // https://llvm.org/doxygen/classllvm_1_1Module.html#a0a5c55e12c97b80021330fe82b642293
+  // for details.
+  py::class_<llvm::Module::ModFlagBehavior>(m, "module_flag_behavior",
+                                            py::module_local());
+  m.attr("MODULE_FLAG_BEHAVIOR_ERROR") = (llvm::Module::Error);
 
   py::class_<llvm::Module>(m, "module", py::module_local())
       .def(
@@ -131,7 +153,23 @@ void init_triton_llvm(py::module &&m) {
           [](llvm::Module *mod) -> llvm::Module::FunctionListType & {
             return mod->getFunctionList();
           },
-          ret::reference_internal);
+          ret::reference_internal)
+      .def(
+          "get_function",
+          [](llvm::Module *mod, std::string &name) -> llvm::Function * {
+            return mod->getFunction(name);
+          },
+          ret::reference_internal)
+      .def("add_flag",
+           [](llvm::Module *mod, llvm::Module::ModFlagBehavior behavior,
+              std::string &key, uint32_t value) {
+             return mod->addModuleFlag(behavior, key, value);
+           })
+      .def("add_flag",
+           [](llvm::Module *mod, llvm::Module::ModFlagBehavior behavior,
+              std::string &key, llvm::Metadata *metadata) {
+             return mod->addModuleFlag(behavior, key, metadata);
+           });
 
   py::class_<llvm::Function>(m, "function", py::module_local())
       .def("set_calling_conv", &llvm::Function::setCallingConv)

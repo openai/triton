@@ -52,7 +52,7 @@ class HIPOptions:
         oclc_wavefrontsize_lib = "oclc_wavefrontsize64_on" if self.warp_size == 64 else "oclc_wavefrontsize64_off"
         libs = [
             "cuda2gcn", "opencl", "ocml", "ockl", "oclc_finite_only_off", "oclc_daz_opt_off",
-            "oclc_correctly_rounded_sqrt_on", "oclc_unsafe_math_off", oclc_wavefrontsize_lib, "oclc_abi_version_400"
+            "oclc_correctly_rounded_sqrt_on", "oclc_unsafe_math_off", oclc_wavefrontsize_lib, "oclc_abi_version_500"
         ]
         libs += ['oclc_isa_version_' + self.arch.replace('gfx', '')]
         for lib in libs:
@@ -185,9 +185,23 @@ class HIPBackend(BaseBackend):
         kernels[0].add_fn_attr("amdgpu-flat-work-group-size", f"1, {options.num_warps*options.warp_size}")
         kernels[0].add_fn_attr("amdgpu-waves-per-eu", f"{options.waves_per_eu}")
         kernels[0].add_fn_attr("denormal-fp-math-f32", "preserve-sign")
+        kernels[0].add_fn_attr("amdgpu-implicitarg-num-bytes", "56")
+        if llvm_mod.get_function("__ockl_hostcall_internal") is not None:
+            #llvm_mod.add_flag(llvm.FLAG_BEHAVIOR_OVERRIDE, "amdgpu_hostcall", 1)
+            hostcall = context.get_string_metadata("hostcall")
+            llvm_mod.add_flag(llvm.MODULE_FLAG_BEHAVIOR_ERROR, "amdgpu_printf_kind", hostcall)
+            llvm_mod.add_flag(llvm.MODULE_FLAG_BEHAVIOR_ERROR, "amdgpu_code_object_version", 500)
         # Get some metadata
         metadata["shared"] = src.get_int_attr("triton_gpu.shared")
         ret = str(llvm_mod)
+        if os.environ.get("AMDGCN_ENABLE_DUMP", "0") == "1":
+            with open('/tmp/llvm-ir', 'w') as f:
+                print("// __ockl_hostcall_internal:\n", file=f)
+                print(llvm_mod.get_function("__ockl_hostcall_internal"), file=f)
+                print("// blabla:\n", file=f)
+                print(llvm_mod.get_function("blablabla"), file=f)
+                print("// -----// LLVM Dump //----- //", file=f)
+                print(ret, file=f)
         return ret
 
     @staticmethod
@@ -202,8 +216,9 @@ class HIPBackend(BaseBackend):
         hsaco = llvm.translate_to_asm(src, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion, True)
         if os.environ.get("AMDGCN_ENABLE_DUMP", "0") == "1":
             hsaco_str = llvm.translate_to_asm(src, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion, False)
-            print("// -----// AMDGCN Dump //----- //")
-            print(hsaco_str)
+            with open('/tmp/amd-gcn', 'w') as f:
+                print("// -----// AMDGCN Dump //----- //", file=f)
+                print(hsaco_str, file=f)
         import subprocess
         rocm_path = HIPBackend.path_to_rocm_lld()
         with tempfile.NamedTemporaryFile() as tmp_out:
