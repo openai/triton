@@ -42,11 +42,13 @@ def build_for_backend(name, src, srcdir):
     if scheme == 'posix_local':
         scheme = 'posix_prefix'
     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
+    cflags = os.environ.get("CFLAGS", "")
 
-    ret = subprocess.check_call([cc, src, f"-I{py_include_dir}", f"-I{srcdir}", "-shared", "-fPIC", "-o", so])
+    ret = subprocess.check_call([cc, src, f"-I{py_include_dir}", f"-I{srcdir}", "-shared", "-fPIC", "-o", so, cflags])
     if ret == 0:
         return so
     # fallback on setuptools
+    # Currently, this should never happen, since check_call raises an exception when the called process returns a non-zero exit status.
     extra_compile_args = []
     library_dirs = []
     include_dirs = [srcdir]
