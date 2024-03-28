@@ -93,7 +93,8 @@ createAsyncCopy(scf::ForOp &forOp, tt::LoadOp loadOp, Value alloc,
       return cvt.getResult();
     };
     src = convertBlockLayout(src);
-    mask = convertBlockLayout(src);
+    if (mask)
+      mask = convertBlockLayout(mask);
   }
 
   tt::MemDescType allocTy = alloc.getType().cast<tt::MemDescType>();
@@ -105,7 +106,7 @@ createAsyncCopy(scf::ForOp &forOp, tt::LoadOp loadOp, Value alloc,
   auto view =
       builder.create<ttg::MemDescSubviewOp>(loc, subviewTy, alloc, copyOffsets);
   Operation *copy = builder.create<ttg::AsyncCopyGlobalToLocalOp>(
-      loc, src, view, loadOp.getMask(), loadOp.getOther(), loadOp.getCache(),
+      loc, src, view, mask, loadOp.getOther(), loadOp.getCache(),
       loadOp.getEvict(), loadOp.getIsVolatile());
   Operation *commmit =
       builder.create<ttg::AsyncCommitGroupOp>(loc, copy->getResult(0));
