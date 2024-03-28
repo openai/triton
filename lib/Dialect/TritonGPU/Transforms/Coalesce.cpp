@@ -1,9 +1,12 @@
 #include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Support/LLVM.h"
 #include "triton/Analysis/AxisInfo.h"
 #include "triton/Dialect/Triton/IR/Utility.h"
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h"
 #include "triton/Dialect/TritonGPU/Transforms/Utility.h"
+#include "llvm/ADT/EquivalenceClasses.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
 #include <iterator>
 #include <numeric>
@@ -19,86 +22,159 @@ using namespace mlir::triton;
 #include "triton/Dialect/TritonGPU/Transforms/Passes.h.inc"
 
 struct CoalescePass : public TritonGPUCoalesceBase<CoalescePass> {
-  void
-  setCoalescedEncoding(ModuleAxisInfoAnalysis &axisInfoAnalysis, Operation *op,
-                       int numWarps, int threadsPerWarp,
-                       llvm::MapVector<Operation *, Attribute> &layoutMap) {
-    Value ptr = getMemAccessPtr(op);
-    auto refTensorType = ptr.getType().cast<RankedTensorType>();
 
-    LDBG("Considering op: " << *op);
-    LLVM_DEBUG({
-      DBGS() << "axis info of pointer: ";
-      axisInfoAnalysis.getAxisInfo(ptr)->print(llvm::dbgs());
-      llvm::dbgs() << "\n";
-    });
+  void groupOps(llvm::EquivalenceClasses<Operation *> &slices,
+                ModuleAxisInfoAnalysis &axisInfoAnalysis) {
 
-    auto contiguity = axisInfoAnalysis.getAxisInfo(ptr)->getContiguity();
-    SmallVector<unsigned> order = argSort(contiguity);
-    LDBG("order=[" << triton::join(order, ", ") << "]");
-
-    auto matchesShape = [&refTensorType](const Value &val) {
+    auto matchesShape = [](const Value &val, RankedTensorType refTensorType) {
       auto rttType = val.getType().dyn_cast<RankedTensorType>();
       return rttType && rttType.getShape() == refTensorType.getShape();
     };
 
-    // The desired divisibility is the maximum divisibility among all dependent
-    // pointers which have the same shape and order as `ptr`.
-    llvm::SmallSetVector<Operation *, 32> memAccessesSameOrder;
-    memAccessesSameOrder.insert(op);
-    if (ptr.getDefiningOp()) {
+    DenseSet<Operation *> unprocessed;
+    for (auto I = slices.begin(), E = slices.end(); I != E; ++I) {
+      if (I->isLeader())
+        for (auto MI = slices.member_begin(I); MI != slices.member_end(); ++MI)
+          unprocessed.insert(*MI);
+    }
+
+    while (!unprocessed.empty()) {
+      Operation *op = *unprocessed.begin();
+      unprocessed.erase(unprocessed.begin());
+      Value ptr = getMemAccessPtr(op);
+      LDBG("Grouping op: " << *op);
+      LLVM_DEBUG({
+        llvm::dbgs() << "axis info of pointer: ";
+        axisInfoAnalysis.getAxisInfo(ptr)->print(llvm::dbgs());
+        llvm::dbgs() << "\n";
+      });
+
+      auto tensorType = ptr.getType().cast<RankedTensorType>();
+      auto contiguity = axisInfoAnalysis.getAxisInfo(ptr)->getContiguity();
+      SmallVector<unsigned> order = argSort(contiguity);
+      LDBG("order=[" << triton::join(order, ", ") << "]");
+
       for (Operation *use : mlir::multiRootGetSlice(op)) {
         Value val = getMemAccessPtr(use);
-        if (!val || !matchesShape(val) || memAccessesSameOrder.contains(use))
+        if (!val || !matchesShape(val, tensorType))
           continue;
         auto currOrder =
             argSort(axisInfoAnalysis.getAxisInfo(val)->getContiguity());
-        if (order == currOrder) {
-          LDBG("multi-root-slice: insert to memAccessesSameOrder " << *use);
-          memAccessesSameOrder.insert(use);
-        }
+        if (order != currOrder)
+          continue;
+        slices.unionSets(op, use);
+        unprocessed.erase(use);
+        LDBG("merged with " << *use);
       }
     }
+  }
 
-    auto shapePerCTA = triton::gpu::getShapePerCTA(refTensorType);
-    LDBG("shapePerCTA=[" << triton::join(shapePerCTA, ", ") << "]");
+  void
+  setCoalescedEncoding(ModuleAxisInfoAnalysis &axisInfoAnalysis,
+                       llvm::EquivalenceClasses<Operation *> &slices,
+                       int numWarps, int threadsPerWarp,
+                       llvm::MapVector<Operation *, Attribute> &layoutMap) {
 
-    int numElems = product<int64_t>(shapePerCTA);
-    int numThreads = numWarps * threadsPerWarp;
-
-    unsigned perThread = getNumElementsPerThread(op, order, axisInfoAnalysis);
-    LDBG("perThread for op: " << perThread);
-
-    for (Operation *opSameOrder : memAccessesSameOrder) {
-      if (opSameOrder == op)
+    for (auto I = slices.begin(), E = slices.end(); I != E; ++I) {
+      if (!I->isLeader())
         continue;
-      unsigned currPerThread =
-          getNumElementsPerThread(opSameOrder, order, axisInfoAnalysis);
-      LDBG("perThread for opSameOrder: " << currPerThread);
-      perThread = std::max(perThread, currPerThread);
+      // Loop over each slice.
+      LDBG("Considering slice: ");
+      struct Layout {
+        unsigned maxPerThread = 0;
+        unsigned minPerThread = 0;
+        unsigned elemNumBytes = 0;
+      };
+
+      unsigned sharedPerThread = 0;
+      llvm::SmallVector<Layout, 10> layouts;
+      for (auto MI = slices.member_begin(I); MI != slices.member_end(); ++MI) {
+        auto op = *MI;
+        Value ptr = getMemAccessPtr(op);
+        auto tensorType = ptr.getType().cast<RankedTensorType>();
+        auto shapePerCTA = triton::gpu::getShapePerCTA(tensorType);
+        auto contiguity = axisInfoAnalysis.getAxisInfo(ptr)->getContiguity();
+        SmallVector<unsigned> order = argSort(contiguity);
+        int numElems = product<int64_t>(shapePerCTA);
+        int numThreads = numWarps * threadsPerWarp;
+        unsigned elemNumBits = getElementBitWidth(tensorType);
+        unsigned elemNumBytes = std::max(elemNumBits / 8, 1u);
+
+        // maximum number of consecutive elements to avoid breaking cross-thread
+        // memory coalesing.
+        unsigned maxMemopSize = 16;
+        unsigned perThread =
+            getNumElementsPerThread(op, order, axisInfoAnalysis);
+        unsigned maxPerThread =
+            std::max(perThread, maxMemopSize / elemNumBytes);
+
+        // minimum number of consecutive elements to ensure a saturation of one
+        // memory transaction.
+        unsigned memTranscationSize = 128;
+        unsigned minPerThread =
+            memTranscationSize / (threadsPerWarp * elemNumBytes);
+        // minimum number of consecutive elements to ensure a four-byte
+        // alignment.
+        minPerThread = std::max(minPerThread, 4 / elemNumBytes);
+
+        LLVM_DEBUG({
+          DBGS() << "  " << *op;
+          DBGS() << "      order=[" << triton::join(order, ", ") << "]\n";
+          DBGS() << "     axis info of pointer: ";
+          axisInfoAnalysis.getAxisInfo(ptr)->print(llvm::dbgs());
+          LDBG("    shapePerCTA=[" << triton::join(shapePerCTA, ", ") << "]");
+          LDBG("    maxPerThread for op: " << maxPerThread);
+          LDBG("    minPerThread for op: " << minPerThread);
+          DBGS() << "\n";
+        });
+
+        layouts.push_back({maxPerThread, minPerThread, elemNumBytes});
+        sharedPerThread = std::max(sharedPerThread, perThread);
+      }
+
+      // Ensure cross-thread coalescing for every memop.
+      for (unsigned I = 0; I < layouts.size(); I++)
+        sharedPerThread = std::min(sharedPerThread, layouts[I].maxPerThread);
+
+      // Ensure bandwidth saturation and correct alignment for every memop.
+      for (unsigned I = 0; I < layouts.size(); I++)
+        sharedPerThread = std::max(sharedPerThread, layouts[I].minPerThread);
+
+      LDBG("sharedPerThread: " << sharedPerThread);
+
+      for (auto MI = slices.member_begin(I); MI != slices.member_end(); ++MI) {
+        auto op = *MI;
+        Value ptr = getMemAccessPtr(op);
+        auto tensorType = ptr.getType().cast<RankedTensorType>();
+        auto shapePerCTA = triton::gpu::getShapePerCTA(tensorType);
+        auto contiguity = axisInfoAnalysis.getAxisInfo(ptr)->getContiguity();
+        SmallVector<unsigned> order = argSort(contiguity);
+        int numElems = product<int64_t>(shapePerCTA);
+        int numThreads = numWarps * threadsPerWarp;
+
+        unsigned perThread =
+            std::min<int>(sharedPerThread, std::max(numElems / numThreads, 1));
+
+        if (!dyn_cast<triton::LoadOp>(op)) {
+          // For ops that can result in a global memory write, we should enforce
+          // that each thread handles at most 128 bits, which is the widest
+          // available vectorized store op; otherwise, the store will have
+          // "gaps" in the memory write at the warp level, resulting in worse
+          // performance. For loads, we can expect that the gaps won't matter
+          // due to the L1 cache.
+          unsigned elemNumBits = getElementBitWidth(tensorType);
+          perThread = std::min<int>(
+              perThread, getNumElementsPerThread(op, order, axisInfoAnalysis));
+        }
+
+        SmallVector<unsigned> sizePerThread(tensorType.getRank(), 1);
+        sizePerThread[order[0]] = perThread;
+        auto CTALayout = triton::gpu::getCTALayout(tensorType.getEncoding());
+        layoutMap[op] = triton::gpu::BlockedEncodingAttr::get(
+            &getContext(), tensorType.getShape(), sizePerThread, order,
+            numWarps, threadsPerWarp, CTALayout);
+      }
     }
-
-    perThread = std::min<int>(perThread, std::max(numElems / numThreads, 1));
-    LDBG("perThread: " << perThread);
-
-    if (!dyn_cast<triton::LoadOp>(op)) {
-      // For ops that can result in a global memory write, we should enforce
-      // that each thread handles at most 128 bits, which is the widest
-      // available vectorized store op; otherwise, the store will have "gaps"
-      // in the memory write at the warp level, resulting in worse performance.
-      // For loads, we can expect that the gaps won't matter due to the L1
-      // cache.
-      unsigned elemNumBits = getElementBitWidth(refTensorType);
-      perThread = std::min<int>(
-          perThread, getNumElementsPerThread(op, order, axisInfoAnalysis));
-    }
-    SmallVector<unsigned> sizePerThread(refTensorType.getRank(), 1);
-    sizePerThread[order[0]] = perThread;
-
-    auto CTALayout = triton::gpu::getCTALayout(refTensorType.getEncoding());
-    layoutMap[op] = triton::gpu::BlockedEncodingAttr::get(
-        &getContext(), refTensorType.getShape(), sizePerThread, order, numWarps,
-        threadsPerWarp, CTALayout);
   }
 
   static Type getNewType(Type type, Attribute encoding) {
@@ -155,14 +231,12 @@ struct CoalescePass : public TritonGPUCoalesceBase<CoalescePass> {
     ModuleOp moduleOp = getOperation();
     ModuleAxisInfoAnalysis axisInfoAnalysis(moduleOp);
 
-    // For each i/o operation, we determine what layout
-    // the pointers should have for best memory coalescing
-    llvm::MapVector<Operation *, Attribute> layoutMap;
+    // Collect memops
+    llvm::EquivalenceClasses<Operation *> MemopSlices;
     moduleOp.walk([&](Operation *curr) {
       Value ptr = getMemAccessPtr(curr);
       if (!ptr)
         return;
-      // We only convert `tensor<tt.ptr<>>` or `tt.ptr<tensor<>>` load/store
       bool isPtrTensor = false, isTensorPointer = false;
       if (auto tensorType = ptr.getType().dyn_cast<RankedTensorType>())
         isPtrTensor = tensorType.getElementType().isa<PointerType>();
@@ -170,13 +244,20 @@ struct CoalescePass : public TritonGPUCoalesceBase<CoalescePass> {
         isTensorPointer = ptrType.getPointeeType().isa<RankedTensorType>();
       if (!isPtrTensor && !isTensorPointer)
         return;
-      auto mod = curr->getParentOfType<ModuleOp>();
-      int numWarps = triton::gpu::TritonGPUDialect::getNumWarps(mod);
-      int threadsPerWarp =
-          triton::gpu::TritonGPUDialect::getThreadsPerWarp(mod);
-      setCoalescedEncoding(axisInfoAnalysis, curr, numWarps, threadsPerWarp,
-                           layoutMap);
+      MemopSlices.insert(curr);
     });
+
+    // Group memops into slices
+    groupOps(MemopSlices, axisInfoAnalysis);
+
+    // For each slice group, we determine what layout the pointers should have
+    // for best memory coalescing.
+    llvm::MapVector<Operation *, Attribute> layoutMap;
+    int numWarps = triton::gpu::TritonGPUDialect::getNumWarps(moduleOp);
+    int threadsPerWarp =
+        triton::gpu::TritonGPUDialect::getThreadsPerWarp(moduleOp);
+    setCoalescedEncoding(axisInfoAnalysis, MemopSlices, numWarps,
+                         threadsPerWarp, layoutMap);
 
     // For each memory op that has a layout L1:
     // 1. Create a coalesced memory layout L2 of the pointer operands
