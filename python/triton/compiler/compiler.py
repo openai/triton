@@ -279,6 +279,12 @@ def compile(src, target=None, options=None):
             print(f"\nOverriding kernel with file {ir_filename}")
             full_name = fn_override_manager.get_file(ir_filename)
             next_module = parse(full_name, ext, context)
+        # use an env variable to parse ttgir from file
+        use_ttgir_loc = os.environ.get("USE_TTGIR_LOC", "0") == "1"
+        if use_ttgir_loc and ext == "ttgir":
+            ttgir_full_name = fn_cache_manager.get_file(ir_filename)
+            next_module = parse(ttgir_full_name, ext, context)
+            print(f"re-parse ttgir with {ttgir_full_name}")
         module = next_module
     # write-back metadata
     metadata_group[metadata_filename] = fn_cache_manager.put(json.dumps(metadata, default=vars), metadata_filename,
