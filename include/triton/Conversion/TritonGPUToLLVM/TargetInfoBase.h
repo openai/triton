@@ -33,6 +33,14 @@ public:
       ArrayRef<unsigned> paddedRepShape, ArrayRef<unsigned> origRepShape,
       ArrayRef<unsigned> outOrd, unsigned accumNumReplicates) const = 0;
 
+  // Prints a message following the given format from the device.
+  // |formatStrStart| is the pointer to the start of the format string global
+  // variable; |args| are the arguments to fill placeholders in the format
+  // string.
+  virtual void printf(Value formatStrStart, int formatStrByteCount,
+                      ValueRange args,
+                      ConversionPatternRewriter &rewriter) const = 0;
+
   virtual ~TargetInfoBase() {}
 };
 } // namespace mlir::triton

@@ -31,6 +31,8 @@ public:
       SmallVector<Value> &vals, RankedTensorType srcTy, Type elemTy,
       ArrayRef<unsigned> paddedRepShape, ArrayRef<unsigned> origRepShape,
       ArrayRef<unsigned> outOrd, unsigned accumNumReplicates) const override;
+  void printf(Value formatStrStart, int formatStrByteCount, ValueRange args,
+              ConversionPatternRewriter &rewriter) const override;
 
 private:
   std::string arch;
