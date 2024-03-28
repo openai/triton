@@ -1577,3 +1577,18 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
     tt.return
   }
 }
+
+// -----
+
+#mma = #triton_gpu.nvidia_mma<{versionMajor = 2, versionMinor = 0, warpsPerCTA = [1, 1], instrShape = [16, 8]}>
+#shared = #triton_gpu.shared<{vec = 16, perPhase = 4, maxPhase = 2, order = [1, 0], hasLeadingOffset = false}>
+module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 1 : i32, triton_gpu.shared = 5120 : i32, "triton_gpu.threads-per-warp" = 32 : i32} {
+  tt.func public @test_non_ldmatrix(%a: !tt.memdesc<32x32xf32, #shared>, %b: tensor<32x32xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #mma, kWidth = 4}>>) {
+    // CHECK-LABEL: test_non_ldmatrix
+    // CHECK-COUNT-8: llvm.load {{.*}} : !llvm.ptr<3> -> vector<4xi32>
+    %cst = arith.constant dense<0.000000e+00> : tensor<32x32xf32, #mma>
+    %48 = triton_gpu.local_load %a : !tt.memdesc<32x32xf32, #shared> -> tensor<32x32xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #mma, kWidth = 4}>>
+    %52 = tt.dot %48, %b, %cst {allowTF32 = true, maxNumImpreciseAcc = 0 : i32} : tensor<32x32xf32, #triton_gpu.dot_op<{opIdx = 0, parent = #mma, kWidth = 4}>> * tensor<32x32xf32, #triton_gpu.dot_op<{opIdx = 1, parent = #mma, kWidth = 4}>> -> tensor<32x32xf32, #mma>
+    tt.return
+  }
+}

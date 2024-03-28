@@ -399,26 +399,29 @@ MMA16816SmemLoader::loadX4(int batch, int mat0, int mat1, ArrayRef<Value> ptrs,
     int inc = needTrans ? 1 : kWidth;
     VectorType packedTy = vec_ty(int_ty(8 * elemBytes), inc);
     int canonBits = std::min(32, 8 * elemBytes * inc);
+    int canonBytes = canonBits / 8;
     int canonWidth = (8 * elemBytes * inc) / canonBits;
     Type canonInt = int_ty(canonBits);
     std::array<Value, 4> retElems;
     retElems.fill(undef(vec_ty(canonInt, 32 / canonBits)));
-    for (int r = 0; r < 2; ++r) {
-      for (int em = 0; em < 2 * vecWidth; em += inc) {
-        int e = em % vecWidth;
-        int m = em / vecWidth;
-        int idx = m * 2 + r;
-        Value ptr = bitcast(vptrs[idx][e], ptr_ty(ctx, 3));
-        Value val = load(packedTy, ptr);
-        Value canonval = bitcast(val, vec_ty(canonInt, canonWidth));
-        for (int w = 0; w < canonWidth; ++w) {
-          int ridx = idx + w * kWidth / vecWidth;
-          retElems[ridx] =
-              insert_element(retElems[ridx],
-                             extract_element(canonval, i32_val(w)), i32_val(e));
-        }
+
+    int laneBytes = 4;
+    int laneWidth = 4;
+    for (int r = 0; r < (laneWidth * laneBytes) / (canonWidth * canonBytes);
+         r++) {
+      int stride = canonWidth * canonBytes / laneBytes;
+      int idx = r * stride;
+      Value ptr = bitcast(vptrs[idx][0], ptr_ty(ctx, 3));
+      Value val = load(packedTy, ptr);
+      Value canonval = bitcast(val, vec_ty(canonInt, canonWidth));
+      for (int w = 0; w < canonWidth; ++w) {
+        int ridx = idx + w * canonBytes / laneBytes;
+        int e = w * canonBytes % laneBytes;
+        retElems[ridx] = insert_element(
+            retElems[ridx], extract_element(canonval, i32_val(w)), i32_val(e));
       }
     }
+
     if (isActualTrans)
       std::swap(retElems[1], retElems[2]);
     return {bitcast(retElems[0], i32_ty), bitcast(retElems[1], i32_ty),
