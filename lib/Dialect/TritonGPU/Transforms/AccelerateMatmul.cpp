@@ -244,7 +244,7 @@ public:
       return failure();
 
     auto instrShape = mmaVersionToInstrShape(versionMajor, retShapePerCTA,
-                                             dotOp.getA().getType());
+                                             dotOp.getA().getType(), numWarps);
     // operands
     Value a = dotOp.getA();
     Value b = dotOp.getB();

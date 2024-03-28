@@ -23,7 +23,8 @@ class SharedEncodingAttr;
 
 SmallVector<unsigned, 3> mmaVersionToInstrShape(int version,
                                                 const ArrayRef<int64_t> &shape,
-                                                TensorOrMemDesc type);
+                                                TensorOrMemDesc type,
+                                                int numWarps);
 
 /// Returns true if the Load uses block pointer.
 bool isLoadFromTensorPtr(triton::LoadOp op);
