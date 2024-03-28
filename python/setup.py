@@ -7,6 +7,8 @@ import sys
 import sysconfig
 import tarfile
 import urllib.request
+
+from bs4 import BeautifulSoup
 from distutils.command.clean import clean
 from pathlib import Path
 from typing import NamedTuple
@@ -230,6 +232,47 @@ def download_and_copy(src_path, variable, version, url_func):
     shutil.copy(src_path, dst_path)
 
 
+def get_cuda_version():
+    try:
+        output = subprocess.check_output(["nvcc", "--version"], text=True)
+        version_line = next(line for line in output.split("\n") if "release" in line)
+        cuda_version = version_line.split("release")[-1].strip().split(",")[0]
+        if cuda_version.count(".") < 2:
+            cuda_version+=".0"
+        return cuda_version
+    except Exception as e:
+        raise RuntimeError("Failed to determine CUDA version") from e
+
+
+def fetch_download_links(url):
+    arch = {"x86_64": "64", "arm64": "aarch64", "aarch64": "aarch64"}[platform.machine()]
+    response = open_url(url)
+    if response is None:
+        return []  # Return an empty list if there was an error opening the URL
+
+    html = response.read()
+
+    soup = BeautifulSoup(html, 'html.parser')
+    links = soup.find_all("a", href=True)
+
+    download_url = ''
+    for link in links:
+        href = link['href']
+        if '/download/' in href and arch in href:  # Filter for download links
+            download_url = f"https://anaconda.org{href}"
+            break
+
+    if download_url == '':
+        raise RuntimeError(f"Failed to find download link for {url}")
+    version_pattern = re.compile(r"\d+\.\d+\.\d+")
+    match = version_pattern.search(download_url)
+    if match:
+        version = match.group()
+        return version
+    else:
+        raise RuntimeError(f"Failed to find version in {download_url}")
+
+
 # ---- cmake extension ----
 
 
@@ -370,24 +413,31 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", "--build", ".", "--target", "mlir-doc"], cwd=cmake_dir)
 
 
+cuda_version = get_cuda_version()
+
+ptxas_version = fetch_download_links(f"https://anaconda.org/nvidia/cuda-nvcc/files?channel=cuda-{cuda_version}")
+cuobjdump_version = fetch_download_links(
+    f"https://anaconda.org/nvidia/cuda-cuobjdump/files?channel=cuda-{cuda_version}")
+nvdisasm_version = fetch_download_links(f"https://anaconda.org/nvidia/cuda-nvdisasm/files?channel=cuda-{cuda_version}")
+
 download_and_copy(
     src_path="bin/ptxas",
     variable="TRITON_PTXAS_PATH",
-    version="12.4.99",
+    version=ptxas_version,
     url_func=lambda arch, version:
     f"https://anaconda.org/nvidia/cuda-nvcc/{version}/download/linux-{arch}/cuda-nvcc-{version}-0.tar.bz2",
 )
 download_and_copy(
     src_path="bin/cuobjdump",
     variable="TRITON_CUOBJDUMP_PATH",
-    version="12.4.99",
+    version=cuobjdump_version,
     url_func=lambda arch, version:
     f"https://anaconda.org/nvidia/cuda-cuobjdump/{version}/download/linux-{arch}/cuda-cuobjdump-{version}-0.tar.bz2",
 )
 download_and_copy(
     src_path="bin/nvdisasm",
     variable="TRITON_NVDISASM_PATH",
-    version="12.4.99",
+    version=nvdisasm_version,
     url_func=lambda arch, version:
     f"https://anaconda.org/nvidia/cuda-nvdisasm/{version}/download/linux-{arch}/cuda-nvdisasm-{version}-0.tar.bz2",
 )
@@ -486,10 +536,7 @@ setup(
     ],
     test_suite="tests",
     extras_require={
-        "build": [
-            "cmake>=3.20",
-            "lit",
-        ],
+        "build": ["cmake>=3.20", "lit", "bs4"],
         "tests": [
             "autopep8",
             "flake8",
