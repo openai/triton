@@ -385,6 +385,9 @@ class InterpreterBuilder:
     def create_make_range(self, start, stop):
         return TensorHandle(np.arange(start, stop, dtype=np.int32), tl.int32)
 
+    def create_histogram(self, data, bins):
+        return TensorHandle(np.histogram(data.data, bins=bins, range=(0, bins))[0], tl.int32)
+
     # pointer arithmetic
 
     def create_addptr(self, ptr, offset):

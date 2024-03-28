@@ -2039,7 +2039,7 @@ def associative_scan(input, axis, combine_fn, reverse=False, _builder=None, _gen
 @_tensor_member_fn
 @builtin
 def histogram(input, num_bins, _builder=None, _generator=None):
-    """computes an histogram based on input tensor with num_bins bins the bins have a width of 1 and start at 0.
+    """computes an histogram based on input tensor with num_bins bins, the bins have a width of 1 and start at 0.
 
     :param input: the input tensor
     :param num_bins: number of histogram bins
