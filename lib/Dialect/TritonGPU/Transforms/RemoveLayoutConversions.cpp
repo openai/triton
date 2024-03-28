@@ -741,8 +741,24 @@ Operation *LayoutPropagation::rewriteOp(Operation *op) {
   return nullptr;
 }
 
-bool canBeRemat(Operation *op) {
-  if (isa<LoadOp, StoreOp>(op))
+bool WillBeMoreExpensiveLoad(LoadOp op, Attribute newEncoding) {
+  auto tensorType = op.getPtr().getType().cast<RankedTensorType>();
+  auto oldEncoding = tensorType.getEncoding();
+  auto oldContigPerThread =
+      triton::gpu::getUniqueContigPerThread(oldEncoding, tensorType.getShape());
+  auto oldOrder = triton::gpu::getOrder(oldEncoding);
+  auto oldContiguity = oldContigPerThread[oldOrder[0]];
+
+  // If the original load cannot be vectorized, the new load will likely not be
+  // more expensive.
+  return oldContiguity > 1;
+}
+
+bool canBeRemat(Operation *op, Attribute newEncoding, bool onlyUsedInSlice) {
+  if (auto loadOp = dyn_cast<LoadOp>(op))
+    return !isExpensiveLoadOrStore(op) ||
+           (onlyUsedInSlice && !WillBeMoreExpensiveLoad(loadOp, newEncoding));
+  if (isa<StoreOp>(op))
     return !isExpensiveLoadOrStore(op);
   if (isa<AtomicRMWOp, AtomicCASOp, DotOp>(op))
     return false;
@@ -890,10 +906,31 @@ LogicalResult getRematerializableSlice(
   if (result.failed() || slice.empty())
     return failure();
 
+  // Check if operations of this slice are only used in the slice. This is to
+  // make sure an expensive operations to be rematerialized will not cause extra
+  // overhead.
+  bool onlyUsedInSlice = true;
+  for (Value v : slice) {
+    if (Operation *op = v.getDefiningOp()) {
+      if (op->hasOneUse()) {
+        continue;
+      } else {
+        for (auto user : op->getUsers()) {
+          for (auto res : user->getResults()) {
+            if (!slice.contains(res)) {
+              onlyUsedInSlice = false;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Check if all the operations in the slice can be rematerialized.
   for (Value v : slice) {
     if (Operation *op = v.getDefiningOp()) {
-      if (!canBeRemat(op))
+      if (!canBeRemat(op, rootEncoding, onlyUsedInSlice))
         return failure();
     }
   }
