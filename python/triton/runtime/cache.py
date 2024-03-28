@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import pickle
 import random
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -26,19 +27,19 @@ class CacheManager(ABC):
         pass
 
     @abstractmethod
-    def get_file(self, filename) -> Optional[str]:
+    def get_file(self, key: str) -> Optional[str]:
         pass
 
     @abstractmethod
-    def put(self, data, filename, binary=True) -> str:
+    def put(self, key: str, data: bytes) -> str:
         pass
 
     @abstractmethod
-    def get_group(self, filename: str) -> Optional[Dict[str, str]]:
+    def put_group(self, key: str, files: Dict[str, bytes]) -> Dict[str, str]:
         pass
 
     @abstractmethod
-    def put_group(self, filename: str, group: Dict[str, str]):
+    def get_group(self, key: str) -> Optional[Dict[str, str]]:
         pass
 
 
@@ -68,20 +69,20 @@ class FileCacheManager(CacheManager):
     def _make_path(self, filename) -> str:
         return os.path.join(self.cache_dir, filename)
 
-    def has_file(self, filename) -> bool:
+    def _has_file(self, filename) -> bool:
         if not self.cache_dir:
             raise RuntimeError("Could not create or locate cache dir")
         return os.path.exists(self._make_path(filename))
 
     def get_file(self, filename) -> Optional[str]:
-        if self.has_file(filename):
+        if self._has_file(filename):
             return self._make_path(filename)
         else:
             return None
 
-    def get_group(self, filename: str) -> Optional[Dict[str, str]]:
-        grp_filename = f"__grp__{filename}"
-        if not self.has_file(grp_filename):
+    def get_group(self, key: str) -> Optional[Dict[str, str]]:
+        grp_filename = f"__grp__{key}.json"
+        if not self._has_file(grp_filename):
             return None
         grp_filepath = self._make_path(grp_filename)
         with open(grp_filepath) as f:
@@ -97,19 +98,17 @@ class FileCacheManager(CacheManager):
         return result
 
     # Note a group of pushed files as being part of a group
-    def put_group(self, filename: str, group: Dict[str, str]) -> str:
+    def _put_group_metadata(self, key: str, group: Dict[str, str]) -> str:
         if not self.cache_dir:
             raise RuntimeError("Could not create or locate cache dir")
-        grp_contents = json.dumps({"child_paths": group})
-        grp_filename = f"__grp__{filename}"
-        return self.put(grp_contents, grp_filename, binary=False)
+        grp_contents = json.dumps({"child_paths": group}).encode("utf-8")
+        grp_filename = f"__grp__{key}.json"
+        return self.put(grp_filename, grp_contents)
 
-    def put(self, data, filename, binary=True) -> str:
+    def put(self, filename: str, data: bytes) -> str:
+        assert isinstance(data, bytes), f"{filename} data is not bytes: {type(data)}"
         if not self.cache_dir:
             raise RuntimeError("Could not create or locate cache dir")
-        binary = isinstance(data, bytes)
-        if not binary:
-            data = str(data)
         assert self.lock_path is not None
         filepath = self._make_path(filename)
         # Random ID to avoid any collisions
@@ -118,13 +117,19 @@ class FileCacheManager(CacheManager):
         pid = os.getpid()
         # use tempfile to be robust against program interruptions
         temp_path = f"{filepath}.tmp.pid_{pid}_{rnd_id}"
-        mode = "wb" if binary else "w"
-        with open(temp_path, mode) as f:
+        with open(temp_path, mode="wb") as f:
             f.write(data)
         # Replace is guaranteed to be atomic on POSIX systems if it succeeds
         # so filepath cannot see a partial write
         os.replace(temp_path, filepath)
         return filepath
+
+    def put_group(self, key, group: Dict[str, bytes]) -> Dict[str, str]:
+        result = {}
+        for name, data in group.items():
+            result[name] = self.put(name, data)
+        self._put_group_metadata(key, result)
+        return result
 
 
 class RemoteCacheBackend:
@@ -136,11 +141,11 @@ class RemoteCacheBackend:
         pass
 
     @abstractmethod
-    def get(self, filenames: List[str]) -> Dict[str, bytes]:
+    def get(self, key: str) -> Optional[bytes]:
         pass
 
     @abstractmethod
-    def put(self, filename: str, data: bytes):
+    def put(self, key: str, data: bytes):
         pass
 
 
@@ -158,11 +163,10 @@ class RedisRemoteCacheBackend(RemoteCacheBackend):
     def _get_key(self, filename: str) -> str:
         return self._key_fmt.format(key=self._key, filename=filename)
 
-    def get(self, filenames: List[str]) -> Dict[str, str]:
-        results = self._redis.mget([self._get_key(f) for f in filenames])
-        return {filename: result for filename, result in zip(filenames, results) if result is not None}
+    def get(self, filename: str) -> Optional[bytes]:
+        return self._redis.get(self._get_key(filename))
 
-    def put(self, filename: str, data: bytes) -> Dict[str, bytes]:
+    def put(self, filename: str, data: bytes):
         self._redis.set(self._get_key(filename), data)
 
 
@@ -182,65 +186,45 @@ class RemoteCacheManager(CacheManager):
         # Use a `FileCacheManager` to materialize remote cache paths locally.
         self._file_cache_manager = FileCacheManager(key, override=override, dump=dump)
 
-    def _materialize(self, filename: str, data: bytes):
-        # We use a backing `FileCacheManager` to provide the materialized data.
-        return self._file_cache_manager.put(data, filename, binary=True)
-
-    def get_file(self, filename: str) -> Optional[str]:
+    def get_file(self, key: str) -> Optional[str]:
         # We don't handle the dump/override cases.
         if self._dump or self._override:
-            return self._file_cache_manager.get_file(filename)
+            return self._file_cache_manager.get_file(key)
 
-        # We always check the remote cache backend -- even if our internal file-
-        # based cache has the item -- to make sure LRU accounting works as
-        # expected.
-        results = self._backend.get([filename])
-        if len(results) == 0:
+        data = self._backend.get(key)
+        if data is None:
             return None
-        (_, data), = results.items()
-        return self._materialize(filename, data)
 
-    def put(self, data, filename: str, binary=True) -> str:
+        return self._file_cache_manager.put(key, data)
+
+    def put(self, key: str, data: bytes) -> str:
         # We don't handle the dump/override cases.
         if self._dump or self._override:
-            return self._file_cache_manager.put(data, filename, binary=binary)
+            return self._file_cache_manager.put(key, data)
 
-        if not isinstance(data, bytes):
-            data = str(data).encode("utf-8")
-        self._backend.put(filename, data)
-        return self._materialize(filename, data)
+        self._backend.put(key, data)
 
-    def get_group(self, filename: str) -> Optional[Dict[str, str]]:
+        return self._file_cache_manager.put(key, data)
+
+    def get_group(self, key: str) -> Optional[Dict[str, str]]:
         # We don't handle the dump/override cases.
         if self._dump or self._override:
             return self._file_cache_manager.get_group(filename)
 
-        grp_filename = f"__grp__{filename}"
-        grp_filepath = self.get_file(grp_filename)
-        if grp_filepath is None:
+        data = self._backend.get(key)
+        if data is None:
             return None
-        with open(grp_filepath) as f:
-            grp_data = json.load(f)
-        child_paths = grp_data.get("child_paths", None)
 
-        result = None
+        return self._file_cache_manager.put_group(key, pickle.loads(data))
 
-        # Found group data.
-        if child_paths is not None:
-            result = {}
-            for child_path, data in self._backend.get(child_paths).items():
-                result[child_path] = self._materialize(child_path, data)
-
-        return result
-
-    def put_group(self, filename: str, group: Dict[str, str]):
+    def put_group(self, key: str, group: Dict[str, bytes]) -> Dict[str, str]:
         # We don't handle the dump/override cases.
         if self._dump or self._override:
-            return self._file_cache_manager.put_group(filename, group)
+            return self._file_cache_manager.put_group(key, group)
 
-        grp_contents = json.dumps({"child_paths": sorted(list(group.keys()))})
-        grp_filename = f"__grp__{filename}"
-        return self.put(grp_contents, grp_filename)
+        self._backend.put(key, pickle.dumps(group))
+
+        return self._file_cache_manager.put_group(key, group)
 
 
 __cache_cls = FileCacheManager

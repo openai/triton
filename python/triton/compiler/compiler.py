@@ -239,12 +239,10 @@ def compile(src, target=None, options=None):
     enable_ir_dump = os.environ.get("TRITON_KERNEL_DUMP", "0") == "1"
     fn_override_manager = get_override_manager(src.hash()) if enable_override else None
     fn_dump_manager = get_dump_manager(src.hash()) if enable_ir_dump else None
-    metadata_filename = f"{src.name}.json"
-    metadata_group = fn_cache_manager.get_group(metadata_filename) or {}
-    metadata_path = metadata_group.get(metadata_filename)
-    if metadata_path is not None:
+    cache_key = src.name
+    metadata_group = fn_cache_manager.get_group(cache_key)
+    if metadata_group is not None:
         # cache hit!
-        metadata = json.loads(Path(metadata_path).read_text())
         return CompiledKernel(src, metadata_group, hash)
     # initialize metadata
     metadata = {
@@ -269,21 +267,24 @@ def compile(src, target=None, options=None):
     except Exception as e:
         filter_traceback(e)
         raise
+    metadata_group = {}
     for ext, compile_ir in list(stages.items())[first_stage:]:
         next_module = compile_ir(module, metadata)
         ir_filename = f"{src.name}.{ext}"
-        metadata_group[ir_filename] = fn_cache_manager.put(next_module, ir_filename)
+        if isinstance(next_module, bytes):
+            data = next_module
+        else:
+            data = str(next_module).encode("utf-8")
+        metadata_group[ir_filename] = data
         if fn_dump_manager is not None:
-            fn_dump_manager.put(next_module, ir_filename)
-        if (fn_override_manager is not None and fn_override_manager.has_file(ir_filename)):
+            fn_dump_manager.put(ir_filename, data)
+        if fn_override_manager is not None and (full_name := fn_override_manager.get_file(ir_filename)) is not None:
             print(f"\nOverriding kernel with file {ir_filename}")
-            full_name = fn_override_manager.get_file(ir_filename)
             next_module = parse(full_name, ext, context)
         module = next_module
     # write-back metadata
-    metadata_group[metadata_filename] = fn_cache_manager.put(json.dumps(metadata, default=vars), metadata_filename,
-                                                             binary=False)
-    fn_cache_manager.put_group(metadata_filename, metadata_group)
+    metadata_group[f"{src.name}.json"] = json.dumps(metadata, default=vars).encode("utf-8")
+    metadata_group = fn_cache_manager.put_group(cache_key, metadata_group)
     # return handle to compiled kernel
     return CompiledKernel(src, metadata_group, hash)
 

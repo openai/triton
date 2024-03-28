@@ -100,7 +100,7 @@ class ExtensionUtils:
                     f.write(src)
                 so = build_for_backend("ext_utils", src_path, tmpdir)
                 with open(so, "rb") as f:
-                    cache_path = cache.put(f.read(), fname, binary=True)
+                    cache_path = cache.put(fname, fname.encode("utf-8"))
         import importlib.util
         spec = importlib.util.spec_from_file_location("ext_utils", cache_path)
         mod = importlib.util.module_from_spec(spec)
@@ -185,7 +185,7 @@ class ExtensionBackend(BaseBackend):
                     f.write(src)
                 so = build_for_backend(name, src_path, tmpdir)
                 with open(so, "rb") as f:
-                    so_path = so_cache_manager.put(f.read(), so_name, binary=True)
+                    so_path = so_cache_manager.put(so_name, f.read())
                     type(self).stub_so_path = so_path
                     return so_path
         else:
