@@ -4,7 +4,7 @@ import builtins
 import time
 from typing import Dict
 
-from ..testing import do_bench
+from ..testing import do_bench, do_bench_cudagraph
 from .jit import KernelInterface
 from .errors import OutOfResources
 
@@ -22,6 +22,7 @@ class Autotuner(KernelInterface):
         prune_configs_by: Dict = None,
         warmup=25,
         rep=100,
+        use_cuda_graph=False,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -29,6 +30,7 @@ class Autotuner(KernelInterface):
             'top_k': number of configs to bench
             'prune_num_stages_by'(optional): a function used to prune num_stages. It takes configs:List[Config] as its input, and returns pruned configs.
         """
+        import torch
         if not configs:
             self.configs = [Config({}, num_warps=4, num_stages=2, num_ctas=1)]
         else:
@@ -77,6 +79,8 @@ class Autotuner(KernelInterface):
         self.fn = fn
         self.num_warmups = warmup
         self.num_reps = rep
+        self.use_cuda_graph = use_cuda_graph and torch.cuda.is_available()
+        self.benchmarkig_stream = torch.cuda.Stream() if self.use_cuda_graph else None
 
     def _bench(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -103,6 +107,10 @@ class Autotuner(KernelInterface):
             self.post_hook(args)
 
         try:
+            if self.use_cuda_graph:
+                with torch.cuda.stream(self.benchmarkig_stream):
+                    bench_res = do_bench_cudagraph(kernel_call, rep=self.num_reps, return_mode="median")
+                return bench_res
             return do_bench(kernel_call, warmup=self.num_warmups, rep=self.num_reps, quantiles=(0.5, 0.2, 0.8))
         except OutOfResources:
             return [float("inf"), float("inf"), float("inf")]
@@ -224,7 +232,8 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100):
+def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, warmup=25, rep=100,
+             use_cuda_graph=False):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -264,7 +273,8 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep)
+        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, prune_configs_by, warmup, rep,
+                         use_cuda_graph=use_cuda_graph)
 
     return decorator
 

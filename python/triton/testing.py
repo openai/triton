@@ -16,7 +16,8 @@ def nvsmi(attrs):
     return ret
 
 
-def do_bench_cudagraph(fn, rep=20, grad_to_none=None):
+def do_bench_cudagraph(fn, rep=20, grad_to_none=None, return_mode="mean"):
+    assert return_mode in ["min", "max", "mean", "median"]
     import torch
     """
     Benchmark the runtime of the provided function.
@@ -73,7 +74,8 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None):
         end_event.record()
         torch.cuda.synchronize()
         ret += [start_event.elapsed_time(end_event) / n_repeat]
-    return torch.mean(torch.tensor(ret)).item()
+    times = torch.tensor(ret)
+    return getattr(torch, return_mode)(times).item()
 
 
 def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, fast_flush=True, return_mode="mean"):
