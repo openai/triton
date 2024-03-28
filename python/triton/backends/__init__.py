@@ -32,19 +32,40 @@ class Backend:
     driver: DriverBase = None
 
 
-def _discover_backends():
-    backends = dict()
-    root = os.path.dirname(__file__)
-    for name in os.listdir(root):
-        if not os.path.isdir(os.path.join(root, name)):
-            continue
-        if name.startswith('__'):
-            continue
-        compiler = _load_module(name, os.path.join(root, name, 'compiler.py'))
-        driver = _load_module(name, os.path.join(root, name, 'driver.py'))
-        backends[name] = Backend(_find_concrete_subclasses(compiler, BaseBackend),
-                                 _find_concrete_subclasses(driver, DriverBase))
+def _discover_backends_from_par():
+    import sys
+    import zipfile
+
+    backends = {}
+    par_path = sys.argv[0]
+    with zipfile.ZipFile(par_path) as z:
+        backends_dir = zipfile.Path(z, "triton/backends/")
+        for path in backends_dir.iterdir():
+            name = path.name
+            if path.is_dir():
+                compiler = importlib.import_module(f"triton.backends.{name}.compiler")
+                driver = importlib.import_module(f"triton.backends.{name}.driver")
+                backends[name] = Backend(_find_concrete_subclasses(compiler, BaseBackend),
+                                         _find_concrete_subclasses(driver, DriverBase))
     return backends
+
+
+def _discover_backends():
+    try:
+        backends = dict()
+        root = os.path.dirname(__file__)
+        for name in os.listdir(root):
+            if not os.path.isdir(os.path.join(root, name)):
+                continue
+            if name.startswith('__'):
+                continue
+            compiler = _load_module(name, os.path.join(root, name, 'compiler.py'))
+            driver = _load_module(name, os.path.join(root, name, 'driver.py'))
+            backends[name] = Backend(_find_concrete_subclasses(compiler, BaseBackend),
+                                     _find_concrete_subclasses(driver, DriverBase))
+        return backends
+    except OSError:
+        return _discover_backends_from_par()
 
 
 backends = _discover_backends()

@@ -68,6 +68,15 @@ def compile_module_from_src(src, name):
 # ------------------------
 
 
+def _read_from_par():
+    import sys
+    import zipfile
+
+    par_path = sys.argv[0]
+    with zipfile.ZipFile(par_path, "r") as z:
+        return z.read("triton/backends/nvidia/driver.c").decode("utf-8")
+
+
 class CudaUtils(object):
 
     def __new__(cls):
@@ -76,7 +85,11 @@ class CudaUtils(object):
         return cls.instance
 
     def __init__(self):
-        mod = compile_module_from_src(Path(os.path.join(dirname, "driver.c")).read_text(), "cuda_utils")
+        try:
+            src = Path(os.path.join(dirname, "driver.c")).read_text()
+        except OSError:
+            src = _read_from_par()
+        mod = compile_module_from_src(src, "cuda_utils")
         self.load_binary = mod.load_binary
         self.get_device_properties = mod.get_device_properties
         self.cuOccupancyMaxActiveClusters = mod.cuOccupancyMaxActiveClusters

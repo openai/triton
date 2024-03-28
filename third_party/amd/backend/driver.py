@@ -31,6 +31,15 @@ def compile_module_from_src(src, name):
     spec.loader.exec_module(mod)
     return mod
 
+def _read_from_par():
+    import sys
+    import zipfile
+
+    par_path = sys.argv[0]
+    with zipfile.ZipFile(par_path, "r") as z:
+        return z.read("triton/backends/amd/driver.c").decode("utf-8")
+
+
 class HIPUtils(object):
 
     def __new__(cls):
@@ -39,7 +48,11 @@ class HIPUtils(object):
         return cls.instance
 
     def __init__(self):
-        mod = compile_module_from_src(Path(os.path.join(dirname, "driver.c")).read_text(), "hip_utils")
+        try:
+            src = Path(os.path.join(dirname, "driver.c")).read_text()
+        except OSError:
+            src = _read_from_par()
+        mod = compile_module_from_src(src, "hip_utils")
         self.load_binary = mod.load_binary
         self.get_device_properties = mod.get_device_properties
 
