@@ -57,23 +57,31 @@ ValueTable getValuesFromDotOperandLayoutStruct(
     Value value, int n0, int n1, int kWidth, Type type, Location loc) {
   auto elems = unpackLLElements(loc, value, rewriter);
   ValueTable vals;
+  Type castedTy = type.isBF16() || type.isF16() ? type : i32_ty;
+  int numElemsCasted =
+      kWidth * type.getIntOrFloatBitWidth() / castedTy.getIntOrFloatBitWidth();
   for (int i = 0; i < n0; i++) {
     for (int j = 0; j < n1; j++) {
       Type elemTy = typeConverter->convertType(type);
-      Type ty = vec_ty(elemTy, kWidth);
-      Value rawElems = undef(ty);
-      for (int k = 0; k < kWidth; ++k) {
-        rawElems = insert_element(ty, rawElems,
-                                  elems[kWidth * (n1 * i + j) + k], i32_val(k));
+      Type ty = vec_ty(castedTy, numElemsCasted);
+      Value castedElems = undef(ty);
+      for (int k = 0; k < numElemsCasted; ++k) {
+        if (int groupSize = kWidth / numElemsCasted; groupSize > 1) {
+          Type groupTy = vec_ty(elemTy, groupSize);
+          Value groupedElems = undef(groupTy);
+          for (int g = 0; g < groupSize; ++g) {
+            groupedElems = insert_element(
+                groupTy, groupedElems,
+                elems[kWidth * (n1 * i + j) + k * groupSize + g], i32_val(g));
+          }
+          castedElems = insert_element(
+              ty, castedElems, bitcast(groupedElems, castedTy), i32_val(k));
+        } else {
+          castedElems = insert_element(
+              ty, castedElems, elems[kWidth * (n1 * i + j) + k], i32_val(k));
+        }
       }
-      Value convertedElems;
-      if (type.isBF16() || type.isF16()) {
-        convertedElems = rawElems;
-      } else {
-        convertedElems =
-            bitcast(rawElems, int_ty(type.getIntOrFloatBitWidth()));
-      }
-      vals[{i, j}] = convertedElems;
+      vals[{i, j}] = castedElems;
     }
   }
   return vals;
@@ -103,9 +111,9 @@ static WMMAInstrType getWMMAInstrTypeFromDot(DotOp op) {
     return WMMAInstrType::FP16_FP16;
   if (dElemTy.isBF16() && aElemTy.isBF16())
     return WMMAInstrType::BF16_BF16;
-  if (dElemTy.isSignedInteger(32) && aElemTy.isUnsignedInteger(8))
+  if (dElemTy.isInteger(32) && aElemTy.isInteger(8))
     return WMMAInstrType::INT32_IU8;
-  if (dElemTy.isSignedInteger(32) && aElemTy.isUnsignedInteger(4))
+  if (dElemTy.isInteger(32) && aElemTy.isInteger(4))
     return WMMAInstrType::INT32_IU4;
 
   return WMMAInstrType::NOT_APPLICABLE;
@@ -131,10 +139,12 @@ Value generateWMMAOp(ConversionPatternRewriter &rewriter, Location loc,
         loc, TypeRange{resType}, ValueRange{valA, valB, valC, falseFlag});
   case WMMAInstrType::INT32_IU8:
     return rewriter.create<ROCDL::wmma_i32_16x16x16_iu8>(
-        loc, TypeRange{resType}, ValueRange{valA, valB, valC, falseFlag});
+        loc, TypeRange{resType},
+        ValueRange{falseFlag, valA, falseFlag, valB, valC, falseFlag});
   case WMMAInstrType::INT32_IU4:
     return rewriter.create<ROCDL::wmma_i32_16x16x16_iu4>(
-        loc, TypeRange{resType}, ValueRange{valA, valB, valC, falseFlag});
+        loc, TypeRange{resType},
+        ValueRange{falseFlag, valA, falseFlag, valB, valC, falseFlag});
   default:
     llvm::report_fatal_error("WMMA data type not supported");
   }

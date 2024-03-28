@@ -484,8 +484,8 @@ static bool supportWMMATypes(Type a, Type b, Type c, Type d) {
       return false;
     auto aWidth = a.getIntOrFloatBitWidth();
     auto cWidth = c.getIntOrFloatBitWidth();
-    bool aValid = a.isUnsignedInteger() && (aWidth == 4 || aWidth == 8);
-    bool cValid = c.isSignedInteger() && cWidth == 32;
+    bool aValid = a.isSignlessInteger() && aWidth <= 8;
+    bool cValid = cWidth <= 32;
     return aValid && cValid;
   } else if (a.isa<FloatType>()) {
     if (a.isBF16())
