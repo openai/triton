@@ -35,7 +35,7 @@ Value printfPromoteValue(ConversionPatternRewriter &rewriter, Value value) {
     return bitcast(newValue, i64_ty);
   }
 
-  llvm::errs() << "current value: " << value << "\n";
+  //llvm::errs() << "current value: " << value << "\n";
   assert(type.isIntOrIndex());
   if (type.getIntOrFloatBitWidth() < 64) {
     if (type.isUnsignedInteger()) {

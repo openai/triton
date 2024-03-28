@@ -50,13 +50,14 @@ class HIPOptions:
         warp_size = 32 if 'gfx10' in self.arch or 'gfx11' in self.arch else 64
         object.__setattr__(self, 'warp_size', warp_size)
         oclc_wavefrontsize_lib = "oclc_wavefrontsize64_on" if self.warp_size == 64 else "oclc_wavefrontsize64_off"
-        libs = [
+        libs = ['oclc_isa_version_' + self.arch.replace('gfx', '')]
+        libs += [
             "cuda2gcn", "opencl", "ocml", "ockl", "oclc_finite_only_off", "oclc_daz_opt_off",
             "oclc_correctly_rounded_sqrt_on", "oclc_unsafe_math_off", oclc_wavefrontsize_lib, "oclc_abi_version_500"
         ]
-        libs += ['oclc_isa_version_' + self.arch.replace('gfx', '')]
         for lib in libs:
             extern_libs[lib] = str(default_libdir / f'{lib}.bc')
+        print("linked in isa lib ", libs)
         object.__setattr__(self, 'extern_libs', tuple(extern_libs.items()))
         assert self.num_warps > 0 and (self.num_warps & (self.num_warps - 1)) == 0, \
                "num_warps must be a power of 2"
@@ -177,7 +178,6 @@ class HIPBackend(BaseBackend):
         if options.extern_libs:
             for name, path in options.extern_libs:
                 llvm.link_extern_lib(llvm_mod, path)
-        llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
         # Set kernel attributes
         kernels = [fn for fn in llvm_mod.get_functions() if not fn.is_declaration()]
         # The public kernel should be kernel 0
@@ -191,17 +191,14 @@ class HIPBackend(BaseBackend):
             hostcall = context.get_string_metadata("hostcall")
             llvm_mod.add_flag(llvm.MODULE_FLAG_BEHAVIOR_ERROR, "amdgpu_printf_kind", hostcall)
             llvm_mod.add_flag(llvm.MODULE_FLAG_BEHAVIOR_ERROR, "amdgpu_code_object_version", 500)
+        llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion)
         # Get some metadata
         metadata["shared"] = src.get_int_attr("triton_gpu.shared")
         ret = str(llvm_mod)
-        if os.environ.get("AMDGCN_ENABLE_DUMP", "0") == "1":
-            with open('/tmp/llvm-ir', 'w') as f:
-                print("// __ockl_hostcall_internal:\n", file=f)
-                print(llvm_mod.get_function("__ockl_hostcall_internal"), file=f)
-                print("// blabla:\n", file=f)
-                print(llvm_mod.get_function("blablabla"), file=f)
-                print("// -----// LLVM Dump //----- //", file=f)
-                print(ret, file=f)
+        #if os.environ.get("AMDGCN_ENABLE_DUMP", "0") == "1":
+        with open('/tmp/llvm-ir', 'w') as f:
+            print("// -----// LLVM Dump //----- //", file=f)
+            print(ret, file=f)
         return ret
 
     @staticmethod
@@ -214,11 +211,10 @@ class HIPBackend(BaseBackend):
         metadata["name"] = names[0]
         # llvm -> hsaco
         hsaco = llvm.translate_to_asm(src, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion, True)
-        if os.environ.get("AMDGCN_ENABLE_DUMP", "0") == "1":
-            hsaco_str = llvm.translate_to_asm(src, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion, False)
-            with open('/tmp/amd-gcn', 'w') as f:
-                print("// -----// AMDGCN Dump //----- //", file=f)
-                print(hsaco_str, file=f)
+        hsaco_str = llvm.translate_to_asm(src, 'amdgcn-amd-amdhsa', options.arch, '', [], options.enable_fp_fusion, False)
+        with open('/tmp/amd-gcn', 'w') as f:
+            print("// -----// AMDGCN Dump //----- //", file=f)
+            print(hsaco_str, file=f)
         import subprocess
         rocm_path = HIPBackend.path_to_rocm_lld()
         with tempfile.NamedTemporaryFile() as tmp_out:

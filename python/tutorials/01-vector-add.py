@@ -46,6 +46,7 @@ def add_kernel(x_ptr,  # *Pointer* to first input vector.
     # Load x and y from DRAM, masking out any extra elements in case the input is not a
     # multiple of the block size.
     x = tl.load(x_ptr + offsets, mask=mask)
+    #tl.device_print("x = ", x)
     y = tl.load(y_ptr + offsets, mask=mask)
     output = x + y
     # Write x + y back to DRAM.

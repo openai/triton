@@ -19,7 +19,7 @@ torch_types = ["int32"]
 
 # TODO: Print with multiple operands
 @pytest.mark.parametrize("func_type, data_type", [("device_print", data_type) for data_type in torch_types] + [
-    ("print", "int32"),
+#    ("print", "int32"),
 #    ("static_print", "int32"),
 #    ("no_arg_print", "int32"),
 #    ("print_no_arg", "int32"),

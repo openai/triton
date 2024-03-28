@@ -18,9 +18,11 @@
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/IPO/Internalize.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -199,9 +201,23 @@ void init_triton_llvm(py::module &&m) {
       py::keep_alive<0, 2>());
 
   m.def("optimize_module", [](llvm::Module *mod,
-                              const llvm::OptimizationLevel &opt) {
+                              const llvm::OptimizationLevel &opt,
+                              std::string triple, std::string proc,
+                              std::string features,
+                              const std::vector<std::string> &flags,
+                              bool enable_fp_fusion) {
     if (mlir::triton::tools::getBoolEnv("DISABLE_LLVM_OPT"))
       return;
+
+    for (llvm::Function &f : mod->functions())
+      if (!f.hasFnAttribute(llvm::Attribute::NoInline))
+        f.addFnAttr(llvm::Attribute::AlwaysInline);
+    // verify and store llvm
+    llvm::legacy::PassManager pm;
+    pm.add(llvm::createAlwaysInlinerLegacyPass());
+    pm.add(llvm::createVerifierPass());
+    pm.run(*mod);
+
     using namespace llvm;
     LoopAnalysisManager lam;
     FunctionAnalysisManager fam;
@@ -235,8 +251,24 @@ void init_triton_llvm(py::module &&m) {
     // some scheduling solution.
     tuningOptions.SLPVectorization = true;
 
-    PassBuilder pb(nullptr /*targetMachine*/, tuningOptions, std::nullopt,
-                   instrCbPtr);
+    // create machine
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    llvm::TargetOptions targetOptions;
+    if (enable_fp_fusion)
+      targetOptions.AllowFPOpFusion = llvm::FPOpFusion::Fast;
+    targetOptions.UnsafeFPMath = false;
+    targetOptions.NoInfsFPMath = false;
+    targetOptions.NoNaNsFPMath = true;
+    targetOptions.TrapUnreachable = true;
+    std::unique_ptr<llvm::TargetMachine> machine{
+        target->createTargetMachine(triple, proc, features, {}, {})};
+    // llvm::Reloc::PIC_, std::nullopt, llvm::CodeGenOptLevel::Aggressive)};
+   
+    mod->setTargetTriple(machine->getTargetTriple().getTriple());
+    mod->setDataLayout(machine->createDataLayout());
+
+    PassBuilder pb(machine.get(), tuningOptions, std::nullopt, instrCbPtr);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -245,6 +277,7 @@ void init_triton_llvm(py::module &&m) {
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
     ModulePassManager mpm;
+    /*
     pb.registerVectorizerStartEPCallback(
         [&](llvm::FunctionPassManager &fpm, llvm::OptimizationLevel level) {
           // Triton generates large structure of scalars which may pessimise
@@ -253,6 +286,7 @@ void init_triton_llvm(py::module &&m) {
           fpm.addPass(BreakStructPhiNodesPass());
           fpm.addPass(InstCombinePass());
         });
+        */
     mpm.addPass(pb.buildPerModuleDefaultPipeline(opt));
     mpm.run(*mod, mam);
   });
@@ -309,8 +343,13 @@ void init_triton_llvm(py::module &&m) {
     }
     extMod->setTargetTriple(mod->getTargetTriple());
     extMod->setDataLayout(mod->getDataLayout());
-    if (llvm::Linker::linkModules(*mod, std::move(extMod),
-                                  llvm::Linker::Flags::LinkOnlyNeeded)) {
+    if (llvm::Linker::linkModules(
+            *mod, std::move(extMod), llvm::Linker::Flags::LinkOnlyNeeded,
+            [](llvm::Module &m, const StringSet<> &gvs) {
+              llvm::internalizeModule(m, [&gvs](const llvm::GlobalValue &gv) {
+                return !gv.hasName() || (gvs.count(gv.getName()) == 0);
+              });
+            })) {
       llvm::errs() << "Failed to link " << path;
       return;
     }
