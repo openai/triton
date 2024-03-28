@@ -206,6 +206,31 @@ struct LoadOpConversion : public ConvertOpToLLVMPattern<triton::LoadOp>,
     LDBG("LoadOp numElems = " << numElems << " vec = " << vec
                               << " valueElemNBits = " << valueElemNBits << " "
                               << op.getType());
+    // Create cache policy here. Consider moving it to function scope.
+    // createpolicy.fractional.L2::policy.b64 xx 1.0
+    PTXBuilder ptxBuilder;
+    const bool hasL2EvictPolicy =
+        op.getEvict() == triton::EvictionPolicy::EVICT_FIRST ||
+        op.getEvict() == triton::EvictionPolicy::EVICT_LAST;
+    Value policyRet;
+    if (hasL2EvictPolicy) {
+      auto &policy =
+          ptxBuilder.create<>("createpolicy.fractional")
+              ->o("L2::evict_first",
+                  op.getEvict() == triton::EvictionPolicy::EVICT_FIRST)
+              .o("L2::evict_last",
+                 op.getEvict() == triton::EvictionPolicy::EVICT_LAST)
+              .b(64);
+      const std::string writeConstraint = "=l";
+      // prepare asm operands
+      auto *dstOpr = ptxBuilder.newOperand(writeConstraint,
+                                           /*init=*/true);
+      std::string fractionStr = "1.0";
+      auto *fractionOpr = ptxBuilder.newConstantOperand(fractionStr);
+      policy(dstOpr, fractionOpr);
+      Type policyRetTy = rewriter.getI64Type();
+      policyRet = ptxBuilder.launch(rewriter, loc, policyRetTy);
+    }
     SmallVector<Value> loadedVals;
     for (size_t vecStart = 0; vecStart < numElems; vecStart += vec) {
       // TODO: optimization when ptr is GEP with constant offset
@@ -218,10 +243,6 @@ struct LoadOpConversion : public ConvertOpToLLVMPattern<triton::LoadOp>,
       const size_t wordNElems = width / valueElemNBits;
       const size_t movWidth = width < 16 ? 16 : width;
       assert(wordNElems * nWords * numVecs == numElems);
-
-      // TODO(Superjomn) Add cache policy fields to StoreOp.
-      // TODO(Superjomn) Deal with cache policy here.
-      const bool hasL2EvictPolicy = false;
 
       PTXBuilder ptxBuilder;
 
@@ -253,15 +274,14 @@ struct LoadOpConversion : public ConvertOpToLLVMPattern<triton::LoadOp>,
                         op.getEvict() == triton::EvictionPolicy::EVICT_FIRST)
                      .o("L1::evict_last",
                         op.getEvict() == triton::EvictionPolicy::EVICT_LAST)
-                     .o("L1::cache_hint", hasL2EvictPolicy)
+                     .o("L2::cache_hint", hasL2EvictPolicy)
                      .v(nWords)
                      .b(width);
 
       PTXBuilder::Operand *evictOpr{};
 
-      // Here lack a mlir::Value to bind to this operation, so disabled.
-      // if (has_l2_evict_policy)
-      //   evictOpr = ptxBuilder.newOperand(l2Evict, "l");
+      if (hasL2EvictPolicy)
+        evictOpr = ptxBuilder.newOperand(policyRet, "l");
 
       if (!evictOpr)
         ld(dstsOpr, addrOpr).predicate(pred, "b");
@@ -392,6 +412,31 @@ struct StoreOpConversion : public ConvertOpToLLVMPattern<triton::StoreOp>,
     const size_t valueElemNBits = dtsize * 8;
 
     const int numVecs = elemsPerThread / vec;
+    // Create cache policy here. Consider moving it to function scope.
+    // createpolicy.fractional.L2::policy.b64 xx 1.0
+    PTXBuilder ptxBuilder;
+    const bool hasL2EvictPolicy =
+        op.getEvict() == triton::EvictionPolicy::EVICT_FIRST ||
+        op.getEvict() == triton::EvictionPolicy::EVICT_LAST;
+    Value policyRet;
+    if (hasL2EvictPolicy) {
+      auto &policy =
+          ptxBuilder.create<>("createpolicy.fractional")
+              ->o("L2::evict_first",
+                  op.getEvict() == triton::EvictionPolicy::EVICT_FIRST)
+              .o("L2::evict_last",
+                 op.getEvict() == triton::EvictionPolicy::EVICT_LAST)
+              .b(64);
+      const std::string writeConstraint = "=l";
+      // prepare asm operands
+      auto *dstOpr = ptxBuilder.newOperand(writeConstraint,
+                                           /*init=*/true);
+      std::string fractionStr = "1.0";
+      auto *fractionOpr = ptxBuilder.newConstantOperand(fractionStr);
+      policy(dstOpr, fractionOpr);
+      Type policyRetTy = rewriter.getI64Type();
+      policyRet = ptxBuilder.launch(rewriter, loc, policyRetTy);
+    }
     for (size_t vecStart = 0; vecStart < elemsPerThread; vecStart += vec) {
       // TODO: optimization when ptr is AddPtr with constant offset
       size_t in_off = 0;
@@ -402,9 +447,6 @@ struct StoreOpConversion : public ConvertOpToLLVMPattern<triton::StoreOp>,
       const size_t nWords = std::max<size_t>(1, totalWidth / width);
       const size_t wordNElems = width / valueElemNBits;
       assert(wordNElems * nWords * numVecs == elemsPerThread);
-
-      // TODO(Superjomn) Add cache policy fields to StoreOp.
-      // TODO(Superjomn) Deal with cache policy here.
 
       Type valArgTy = IntegerType::get(ctx, width);
       auto wordTy = vec_ty(valueElemTy, wordNElems);
@@ -450,9 +492,17 @@ struct StoreOpConversion : public ConvertOpToLLVMPattern<triton::StoreOp>,
                  op.getEvict() == triton::EvictionPolicy::EVICT_FIRST)
               .o("L1::evict_last",
                  op.getEvict() == triton::EvictionPolicy::EVICT_LAST)
+              .o("L2::cache_hint", hasL2EvictPolicy)
               .v(nWords)
               .b(width);
-      ptxStoreInstr(asmAddr, asmArgList).predicate(maskVal, "b");
+
+      PTXBuilder::Operand *evictOpr{};
+      if (hasL2EvictPolicy)
+        evictOpr = ptxBuilder.newOperand(policyRet, "l");
+      if (!evictOpr)
+        ptxStoreInstr(asmAddr, asmArgList).predicate(maskVal, "b");
+      else
+        ptxStoreInstr(asmAddr, asmArgList, evictOpr).predicate(maskVal, "b");
 
       Type boolTy = getTypeConverter()->convertType(rewriter.getIntegerType(1));
       llvm::SmallVector<Type> argTys({boolTy, ptr.getType()});
