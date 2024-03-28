@@ -26,7 +26,7 @@ jobs:
           docker container prune -f
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # The LATEST_DATE here should be kept in sync with the one in Patch setup.py
       - id: check-version
