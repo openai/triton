@@ -66,6 +66,18 @@ SmallVector<Value> reorderValues(const SmallVector<Value> &values, Type inType,
   auto ouEltTy = ouTensorTy.getElementType();
   if (inBitWidth == ouBitWidth)
     return values;
+  if (inEncoding.getOpIdx() == 1) {
+    auto inK = inTensorTy.getShape()[inTensorTy.getRank() - 2];
+    auto minK = 256 / inBitWidth;
+    if (inK < minK) {
+      // The smaller bit-width, the larger needed k to make a whole instr-shape.
+      // It's OK to have k less than minK, because after cast, result type will
+      // have proper k.
+      return {values.begin(), values.begin() + (values.size() * inK / minK)};
+    } else {
+      return values;
+    }
+  }
   if (inBitWidth == 16 && ouBitWidth == 32) {
     SmallVector<Value> ret;
     for (unsigned i = 0; i < values.size(); i += 8) {
