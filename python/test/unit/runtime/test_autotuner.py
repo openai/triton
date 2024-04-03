@@ -42,6 +42,27 @@ def test_restore():
     triton.testing.assert_close(src, torch.ones_like(src))
 
 
+def test_override():
+    N = 1024
+    src = torch.zeros(N, device='cuda')
+    num_done = torch.zeros(1, device='cuda')
+
+    configs = [triton.Config(kwargs={'BLOCK_SIZE': 32}), triton.Config(kwargs={'BLOCK_SIZE': 128})]
+
+    @triton.autotune(configs=configs, key=['N'], overrides={"skip_increment": True}, warmup=1, rep=1)
+    @triton.jit
+    def _kernel(src, N, num_done, BLOCK_SIZE: tl.constexpr, skip_increment = False):
+        offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+        x = tl.load(src + offsets, mask=offsets < N) + 1
+        tl.store(src + offsets, x, mask=offsets < N)
+        if tl.program_id(0) == 0 and not skip_increment:
+            tl.atomic_add(num_done, 1)
+
+    grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE']), )
+    _kernel[grid](src, N, num_done)
+    triton.testing.assert_close(num_done, torch.ones_like(num_done))
+
+
 @pytest.mark.parametrize('with_perf_model', [False, True])
 def test_prune_configs(with_perf_model: bool):
     N = 1024
