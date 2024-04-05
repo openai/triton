@@ -3106,7 +3106,10 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
     ptx = pgm.asm['ptx']
     if (K > 16 or N > 16 or M > 16) and (M * N // (num_warps * 32) >= 4):
         # XXX: skip small sizes because they are not vectorized
-        assert 'ld.global.v4' in ptx
+        if in_dtype == 'bfloat16' and out_dtype == tl.float32:
+            assert 'ld.global.v2' in ptx
+        else:
+            assert 'ld.global.v4' in ptx
         if 'float8' in in_dtype:
             assert 'st.global.v2' in ptx
         else:
