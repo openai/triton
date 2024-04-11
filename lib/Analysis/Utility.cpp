@@ -612,7 +612,7 @@ bool matchMmaV3AndDotOperandLayout(RankedTensorType srcTy,
   auto dstLayout = dstTy.getEncoding();
   auto mmaLayout = srcLayout.cast<NvidiaMmaEncodingAttr>();
   auto dotOperandLayout = dstLayout.cast<DotOperandEncodingAttr>();
-  int elementTypeSize = srcTy.getElementType().getIntOrFloatBitWidth();
+  unsigned elementTypeSize = srcTy.getElementType().getIntOrFloatBitWidth();
   auto ans = mmaLayout.getVersionMajor() == 3 &&
              dotOperandLayout.getOpIdx() == 0 &&
              isMmaToMmaShortcut(dotOperandLayout.getParent(), srcLayout) &&
@@ -628,12 +628,13 @@ bool isMmaToDotShortcut(RankedTensorType srcTy, RankedTensorType dstTy) {
   auto srcLayout = srcTy.getEncoding();
   auto dstLayout = dstTy.getEncoding();
   auto mmaLayout = srcLayout.cast<NvidiaMmaEncodingAttr>();
+  unsigned elementTypeSize = srcTy.getElementType().getIntOrFloatBitWidth();
   auto dotOperandLayout = dstLayout.cast<DotOperandEncodingAttr>();
   return mmaLayout.getVersionMajor() == 2 &&
          mmaLayout.getWarpsPerCTA()[1] == 1 &&
          dotOperandLayout.getOpIdx() == 0 &&
          dotOperandLayout.getParent() == mmaLayout &&
-         !srcTy.getElementType().isF32();
+         (elementTypeSize == 16 || elementTypeSize == 8);
 }
 
 namespace {

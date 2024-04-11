@@ -1577,3 +1577,35 @@ module attributes {"triton_gpu.compute-capability" = 80 : i32, "triton_gpu.num-c
     tt.return
   }
 }
+
+// -----
+
+#mma = #triton_gpu.nvidia_mma<{versionMajor = 2, versionMinor = 0, warpsPerCTA = [4, 1], instrShape = [16, 8]}>
+#shared = #triton_gpu.shared<{vec = 16, perPhase = 2, maxPhase = 4, order = [1, 0], hasLeadingOffset = false}>
+module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 : i32} {
+// CHECK-LABEL: cvt_mma_to_dot_int8
+// CHECK: nvvm.shfl.sync
+// CHECK: nvvm.shfl.sync
+// CHECK: prmt.b32
+// CHECK: prmt.b32
+  tt.func @cvt_mma_to_dot_int8(%a: tensor<128x64xi8, #mma>) {
+    %opA = triton_gpu.convert_layout %a : tensor<128x64xi8, #mma> -> tensor<128x64xi8, #triton_gpu.dot_op<{opIdx = 0, parent = #mma}>>
+    tt.return
+  }
+}
+
+// -----
+
+#mma = #triton_gpu.nvidia_mma<{versionMajor = 2, versionMinor = 0, warpsPerCTA = [4, 1], instrShape = [16, 8]}>
+#shared = #triton_gpu.shared<{vec = 16, perPhase = 2, maxPhase = 4, order = [1, 0], hasLeadingOffset = false}>
+module attributes {"triton_gpu.compute-capability" = 89 : i32, "triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 : i32} {
+// CHECK-LABEL: cvt_mma_to_dot_fp8
+// CHECK: nvvm.shfl.sync
+// CHECK: nvvm.shfl.sync
+// CHECK: prmt.b32
+// CHECK: prmt.b32
+  tt.func @cvt_mma_to_dot_fp8(%a: tensor<128x64xf8E5M2, #mma>) {
+    %opA = triton_gpu.convert_layout %a : tensor<128x64xf8E5M2, #mma> -> tensor<128x64xf8E5M2, #triton_gpu.dot_op<{opIdx = 0, parent = #mma}>>
+    tt.return
+  }
+}
