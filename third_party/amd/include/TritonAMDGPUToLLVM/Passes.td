@@ -13,6 +13,11 @@ def DecomposeUnsupportedAMDConversions : Pass<"decompose-unsupported-amd-convers
     ];
 }
 
+def OptimizeAMDLDSUsage : Pass<"optimize-amd-lds-usage", "mlir::ModuleOp"> {
+    let summary = "Minimize LDS usage";
+    let constructor = "mlir::triton::AMD::createOptimizeLDSUsagePass()";
+}
+
 def ConvertTritonAMDGPUToLLVM : Pass<"convert-triton-amdgpu-to-llvm", "mlir::ModuleOp"> {
     let summary = "Convert TritonGPU to LLVM";
     let constructor = "mlir::triton::createConvertTritonAMDGPUToLLVMPass(\"\", /*ftz=*/true)";
