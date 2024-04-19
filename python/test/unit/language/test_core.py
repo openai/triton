@@ -5239,3 +5239,33 @@ def test_tl_range(device):
             ptx = pgm.asm['ptx']
             # check that the loop got pipelined with the right number of stages.
             assert 'cp.async.wait_group 0x6' in ptx
+
+
+@pytest.mark.parametrize("dtype, M, N, K, Axis", [(dtype, M, N, K, Axis)
+                                                  for dtype in ['int8', 'float32', 'float16']
+                                                  for M in [16, 32]
+                                                  for N in [16, 32]
+                                                  for K in [16, 32]
+                                                  for Axis in [0, 1, 2]])
+def test_combine_broadcast_mul_reduce_pattern(dtype, M, N, K, Axis, device):
+
+    @triton.jit
+    def kernel(c_ptr, a_ptr, b_ptr, M: tl.constexpr, N: tl.constexpr, K: tl.constexpr, Axis: tl.constexpr,
+               C0: tl.constexpr, C1: tl.constexpr):
+        a = tl.load(a_ptr + tl.arange(0, M)[:, None] * K + tl.arange(0, K)[None, :])
+        b = tl.load(b_ptr + tl.arange(0, K)[:, None] * N + tl.arange(0, N)[None, :])
+        a1 = a[:, :, None]
+        b1 = b[None, :, :]
+        c = tl.sum(a1 * b1, axis=Axis)
+        tl.store(c_ptr + tl.arange(0, C0)[:, None] * C1 + tl.arange(0, C1)[None, :], c)
+
+    torch.manual_seed(0)
+    dtype = getattr(torch, dtype)
+    a_max = max(M, K)
+    b_max = max(N, K)
+    a = torch.randint(low=-a_max // 2, high=a_max // 2, size=[M, K], dtype=dtype, device=device)
+    b = torch.randint(low=-b_max // 2, high=b_max // 2, size=[K, N], dtype=dtype, device=device)
+    c_ref = torch.sum(torch.unsqueeze(a, 2) * torch.unsqueeze(b, 0), axis=Axis, dtype=dtype)
+    c = torch.zeros_like(c_ref)
+    kernel[(1, )](c, a, b, M=M, N=N, K=K, Axis=Axis, C0=c.size(0), C1=c.size(1))
+    torch.testing.assert_close(c, c_ref)

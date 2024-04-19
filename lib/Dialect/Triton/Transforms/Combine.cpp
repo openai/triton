@@ -149,15 +149,6 @@ private:
     return false;
   }
 
-  static SmallVector<int> getEqualIndices(ArrayRef<int64_t> x,
-                                          ArrayRef<int64_t> y) {
-    SmallVector<int> res;
-    for (int i = 0; i < x.size(); ++i)
-      if (x[i] == y[i])
-        res.push_back(i);
-    return res;
-  }
-
 public:
   CombineBroadcastMulReducePattern(MLIRContext *context)
       : RewritePattern(ReduceOp::getOperationName(), 1, context) {}
@@ -172,7 +163,7 @@ public:
     bool isReduceAdd = combineOp.hasOneBlock() &&
                        combineOp.front().getOperations().size() == 2 &&
                        isAddF32(&*combineOp.front().getOperations().begin());
-    if (!isReduceAdd)
+    if (!isReduceAdd || reduceOp.getAxis() != 1)
       return failure();
     // operand of reduce has to be mul
     auto mulOp = llvm::dyn_cast_or_null<arith::MulFOp>(
@@ -208,14 +199,15 @@ public:
         broadcastLhsOp.getType().cast<ShapedType>().getShape();
     if (broadcastLhsShape[2] < 16 || broadcastRhsShape[0] < 16)
       return failure();
+    auto accElemType =
+        broadcastLhsOp.getSrc().getType().cast<ShapedType>().getElementType();
     Type newAccType = RankedTensorType::get(
-        {broadcastLhsShape[0], broadcastRhsShape[2]},
-        broadcastLhsOp.getSrc().getType().cast<ShapedType>().getElementType());
+        {broadcastLhsShape[0], broadcastRhsShape[2]}, accElemType);
     rewriter.setInsertionPoint(op);
     auto newAcc = rewriter.create<SplatOp>(
         op->getLoc(), newAccType,
-        rewriter.create<arith::ConstantOp>(op->getLoc(),
-                                           rewriter.getF32FloatAttr(0)));
+        rewriter.create<arith::ConstantOp>(
+            op->getLoc(), rewriter.getFloatAttr(accElemType, .0)));
     rewriter.replaceOpWithNewOp<DotOp>(op, expandLhsOp.getSrc(),
                                        expandRhsOp.getSrc(), newAcc,
                                        InputPrecision::TF32, 0);
