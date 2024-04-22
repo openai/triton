@@ -456,15 +456,6 @@ private:
     resolveExplicitBufferLiveness(getValueLivenessRange);
     resolveAliasBufferLiveness(getValueLivenessRange);
     resolveScratchBufferLiveness(operationId);
-    // operation->walk<WalkOrder::PostOrder>([&](Operation *op) {
-    //   llvm::outs() << *op;
-    //   auto outputs = op->getOpResults();
-    //   for (auto out : outputs) {
-    //     auto bufferId = this->allocation->getBufferId(out);
-    //     llvm::outs() << "bufferid: " << bufferId;
-    //   }
-    //   llvm::outs() << "\n";
-    // });
   }
 
   /// Computes the shared memory offsets for all related values.
