@@ -20,6 +20,7 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+#include "OptimizeLDSUtility.h"
 #include "TritonAMDGPUToLLVM/Passes.h"
 #include "mlir/Analysis/Liveness.h"
 #include "mlir/Pass/Pass.h"
@@ -41,110 +42,8 @@ namespace triton {
 
 namespace {
 
-constexpr int kPtrBitWidth = 64;
-
 class OptimizeAMDLDSUsage
     : public mlir::triton::impl::OptimizeAMDLDSUsageBase<OptimizeAMDLDSUsage> {
-
-  static int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp &cvtOp) {
-    unsigned inVec = 0;
-    unsigned outVec = 0;
-    auto smemShape = triton::getScratchConfigForCvtLayout(cvtOp, inVec, outVec);
-    unsigned elems = std::accumulate(smemShape.begin(), smemShape.end(), 1,
-                                     std::multiplies{});
-    auto srcType = cvtOp.getSrc().getType();
-    auto bytes =
-        srcType.getElementType().isa<triton::PointerType>()
-            ? elems * kPtrBitWidth / 8
-            : elems * std::max<int>(8, srcType.getElementTypeBitWidth()) / 8;
-
-    return bytes;
-  }
-
-  static bool isPowerOfTwo(unsigned x) { return x && (x & (x - 1)) == 0; }
-
-  static std::vector<SmallVector<unsigned>> factorizePowerOf2(int n) {
-    assert(isPowerOfTwo(n));
-    int x = log2(n);
-    std::vector<SmallVector<unsigned>> pairs;
-
-    for (int i = 0; i <= x / 2; ++i) {
-      int j = x - i;
-      SmallVector<unsigned> sample(2);
-      sample[0] = pow(2, i);
-      sample[1] = pow(2, j);
-      pairs.push_back(sample);
-      std::swap(sample[0], sample[1]);
-      pairs.push_back(sample);
-    }
-
-    return pairs;
-  }
-
-  /**
-   * @brief Copy given layout with different warpsPerCTA parameter
-   * @param layout original layout
-   * @param warpsPerCTA new warpsPerCTA
-   * @return create layout
-   */
-  Attribute createTmpLayout(Attribute layout, ArrayRef<unsigned> warpsPerCTA) {
-    auto ctx = layout.getContext();
-    if (auto src = layout.dyn_cast<triton::gpu::AMDMfmaEncodingAttr>())
-      return triton::gpu::AMDMfmaEncodingAttr::get(
-          ctx, src.getVersionMajor(), src.getVersionMinor(), warpsPerCTA,
-          src.getMDim(), src.getNDim(), src.getIsTransposed(),
-          src.getCTALayout());
-    if (auto src = layout.dyn_cast<triton::gpu::AMDWmmaEncodingAttr>())
-      return triton::gpu::AMDWmmaEncodingAttr::get(ctx, warpsPerCTA,
-                                                   src.getCTALayout());
-    if (auto src = layout.dyn_cast<triton::gpu::BlockedEncodingAttr>())
-      return triton::gpu::BlockedEncodingAttr::get(
-          ctx, src.getSizePerThread(), src.getThreadsPerWarp(), warpsPerCTA,
-          src.getOrder(), src.getCTALayout());
-    if (auto src = layout.dyn_cast<triton::gpu::DotOperandEncodingAttr>()) {
-      return triton::gpu::DotOperandEncodingAttr::get(
-          ctx, src.getOpIdx(), createTmpLayout(src.getParent(), warpsPerCTA),
-          src.getKWidth());
-    }
-    if (auto src = layout.dyn_cast<triton::gpu::SliceEncodingAttr>())
-      return triton::gpu::SliceEncodingAttr::get(
-          ctx, src.getDim(), createTmpLayout(src.getParent(), warpsPerCTA));
-    assert("Encountered unsupported layout");
-    return Attribute();
-  }
-
-  /**
-   * Creates two chained convert layout operations
-   *
-   * %1 = cvtOp %0 (srcLayout -> dstLayout)
-   * ->
-   * %1 = cvtOp %0 (srcLayout -> dstLayout)
-   * %2 = cvtOp %0 (srcLayout -> tmpLayout)
-   * %3 = cvtOp %1 (tmpLayout -> dstLayout)
-   *
-   * @param builder
-   * @param cvtOp original operation
-   * @param tmpLayout
-   * @return pair of created operations
-   */
-  static std::pair<triton::gpu::ConvertLayoutOp, triton::gpu::ConvertLayoutOp>
-  createNewConvertOps(OpBuilder &builder, triton::gpu::ConvertLayoutOp &cvtOp,
-                      Attribute tmpLayout) {
-    auto srcType = cvtOp.getSrc().getType();
-    auto dstType = cvtOp.getType();
-
-    auto newDstType = RankedTensorType::get(
-        dstType.getShape(), dstType.getElementType(), dstType.getEncoding());
-    RankedTensorType newSrcType = RankedTensorType::get(
-        srcType.getShape(), srcType.getElementType(), tmpLayout);
-
-    auto tmpCvt = builder.create<triton::gpu::ConvertLayoutOp>(
-        cvtOp.getLoc(), newSrcType, cvtOp.getSrc());
-    auto newEpilogueCvt = builder.create<triton::gpu::ConvertLayoutOp>(
-        cvtOp.getLoc(), newDstType, tmpCvt);
-
-    return std::make_pair(tmpCvt, newEpilogueCvt);
-  }
 
   // Try to reduce LDS usage of cvt op.
   //
@@ -155,12 +54,12 @@ class OptimizeAMDLDSUsage
   // layout uses across y dimension.
   //
   // clang-format off
-//
-// LDS usage of this op is roughly calculated as:
-// LDS_USAGE = getShapePerCTA(mfma_layout)[0] * getShapePerCTA(blocked_layout)[1] * sizeof(data_type)
-// LDS_USAGE = warpsPerCTA(mfma_layout)[0] * warpsPerCta(blocked_layout)[1] * C,
-// where C = 32 * sizePerWarp(blocked_layout)[1] * threadsPerWarp(blocked_layout)[1] * sizeof(data_type)
-//
+  //
+  // LDS usage of this op is roughly calculated as:
+  // LDS_USAGE = getShapePerCTA(mfma_layout)[0] * getShapePerCTA(blocked_layout)[1] * sizeof(data_type)
+  // LDS_USAGE = warpsPerCTA(mfma_layout)[0] * warpsPerCta(blocked_layout)[1] * C,
+  // where C = 32 * sizePerWarp(blocked_layout)[1] * threadsPerWarp(blocked_layout)[1] * sizeof(data_type)
+  //
   // clang-format on
   //
   // When LDS_USAGE exceeds the size of LDS, try to lower LDS usage by
@@ -176,7 +75,7 @@ class OptimizeAMDLDSUsage
     auto srcEnc = srcType.getEncoding();
     auto dstEnc = dstType.getEncoding();
 
-    auto currLDSUsage = getCvtOpLDSUsage(cvtOp);
+    auto currLDSUsage = mlir::triton::AMD::getCvtOpLDSUsage(cvtOp);
     if (currLDSUsage <= LDSSize) {
       return;
     }
@@ -186,20 +85,20 @@ class OptimizeAMDLDSUsage
     unsigned numWarps = triton::gpu::getNumWarpsPerCTA(srcEnc);
     auto warpSize = triton::gpu::getWarpSize(srcEnc);
 
-    triton::gpu::ConvertLayoutOp tmpCvt;
-    triton::gpu::ConvertLayoutOp newEpilogueCvt;
-
     // Find all possible shapes of WarpsPerCTA by finding all possible
     // factorizations of numWarps. Pick shape for which both conversions in
     // decomposition use LDS less than LDSSize and for which sum of LDS usage
     // is minimal. If no such shape exists, do not decompose.
-    auto factorizedNumWarps = factorizePowerOf2(numWarps);
+    auto factorizedNumWarps =
+        mlir::triton::AMD::factorizePowerOf2(numWarps, rank);
     // Create a list of temporary layouts
     SmallVector<Attribute> tmpLayouts;
     for (int i = 0; i < factorizedNumWarps.size(); i++) {
       auto warpsPerCTA = factorizedNumWarps[i];
-      tmpLayouts.push_back(createTmpLayout(srcEnc, warpsPerCTA));
-      tmpLayouts.push_back(createTmpLayout(dstEnc, warpsPerCTA));
+      tmpLayouts.push_back(
+          mlir::triton::AMD::createTmpLayout(srcEnc, warpsPerCTA));
+      tmpLayouts.push_back(
+          mlir::triton::AMD::createTmpLayout(dstEnc, warpsPerCTA));
       SmallVector<unsigned> elemsPerThread(rank, 1);
       SmallVector<unsigned> threadsPerWarp(rank, 1);
       threadsPerWarp[rank - 1] = warpSize / 8;
@@ -214,31 +113,25 @@ class OptimizeAMDLDSUsage
     unsigned minLDSUsage = 2 * LDSSize;
     int minIdx = -1;
     for (int i = 0; i < tmpLayouts.size(); i++) {
-      auto tmpLayout = tmpLayouts[i];
-      std::tie(tmpCvt, newEpilogueCvt) =
-          createNewConvertOps(builder, cvtOp, tmpLayout);
-
-      int tmpCvtLDS = getCvtOpLDSUsage(tmpCvt);
-      int newCvtLDS = getCvtOpLDSUsage(newEpilogueCvt);
-      if (tmpCvtLDS <= LDSSize && newCvtLDS <= LDSSize) {
-        int LDSUsage = std::max(tmpCvtLDS, newCvtLDS);
-        if (LDSUsage < minLDSUsage) {
-          minLDSUsage = LDSUsage;
-          minIdx = i;
-        }
+      auto resources = mlir::triton::AMD::estimateResourcesForReplacement(
+          builder, cvtOp, tmpLayouts[i]);
+      if (resources.LDS <= LDSSize && resources.LDS < minLDSUsage) {
+        minLDSUsage = resources.LDS;
+        minIdx = i;
       }
-      newEpilogueCvt.erase();
-      tmpCvt.erase();
     }
 
     if (minIdx == -1) {
       return;
     }
 
+    triton::gpu::ConvertLayoutOp tmpCvt;
+    triton::gpu::ConvertLayoutOp newEpilogueCvt;
+
     assert(minIdx >= 0 && minIdx < tmpLayouts.size());
     auto tmpLayout = tmpLayouts[minIdx];
     std::tie(tmpCvt, newEpilogueCvt) =
-        createNewConvertOps(builder, cvtOp, tmpLayout);
+        mlir::triton::AMD::createNewConvertOps(builder, cvtOp, tmpLayout);
 
     cvtOp.replaceAllUsesWith(newEpilogueCvt.getResult());
     cvtOp.erase();
