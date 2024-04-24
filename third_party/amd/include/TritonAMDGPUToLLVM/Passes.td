@@ -16,6 +16,12 @@ def DecomposeUnsupportedAMDConversions : Pass<"decompose-unsupported-amd-convers
 def OptimizeAMDLDSUsage : Pass<"optimize-amd-lds-usage", "mlir::ModuleOp"> {
     let summary = "Minimize LDS usage";
     let constructor = "mlir::triton::AMD::createOptimizeLDSUsagePass()";
+
+    let options = [
+        Option<"LDSSize", "lds-size",
+               "int32_t", /*default*/"65536",
+               "size of CTA LDS in bytes">,
+    ];
 }
 
 def ConvertTritonAMDGPUToLLVM : Pass<"convert-triton-amdgpu-to-llvm", "mlir::ModuleOp"> {
