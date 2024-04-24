@@ -17,19 +17,23 @@ namespace AMD {
 
 constexpr int kPtrBitWidth = 64;
 
-int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp &cvtOp) {
+int getCvtOpLDSUsage(RankedTensorType srcTy, RankedTensorType dstTy) {
   unsigned inVec = 0;
   unsigned outVec = 0;
-  auto smemShape = triton::getScratchConfigForCvtLayout(cvtOp, inVec, outVec);
+  auto smemShape =
+      triton::getScratchConfigForCvtLayout(srcTy, dstTy, inVec, outVec);
   unsigned elems =
       std::accumulate(smemShape.begin(), smemShape.end(), 1, std::multiplies{});
-  auto srcType = cvtOp.getSrc().getType();
   auto bytes =
-      srcType.getElementType().isa<triton::PointerType>()
+      srcTy.getElementType().isa<triton::PointerType>()
           ? elems * kPtrBitWidth / 8
-          : elems * std::max<int>(8, srcType.getElementTypeBitWidth()) / 8;
+          : elems * std::max<int>(8, srcTy.getElementTypeBitWidth()) / 8;
 
   return bytes;
+}
+
+int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp op) {
+  return getCvtOpLDSUsage(op.getSrc().getType(), op.getType());
 }
 
 bool isPowerOfTwo(unsigned x) { return x && (x & (x - 1)) == 0; }
@@ -108,15 +112,14 @@ estimateResourcesForReplacement(OpBuilder builder,
   triton::gpu::ConvertLayoutOp tmpCvt;
   triton::gpu::ConvertLayoutOp newEpilogueCvt;
 
-  std::tie(tmpCvt, newEpilogueCvt) =
-      mlir::triton::AMD::createNewConvertOps(builder, cvtOp, tmpLayout);
+  RankedTensorType srcTy = cvtOp.getSrc().getType();
+  RankedTensorType dstTy = cvtOp.getType();
+  RankedTensorType intermediateTy = RankedTensorType::get(
+      srcTy.getShape(), srcTy.getElementType(), tmpLayout);
 
-  int tmpCvtLDS = mlir::triton::AMD::getCvtOpLDSUsage(tmpCvt);
-  int newCvtLDS = mlir::triton::AMD::getCvtOpLDSUsage(newEpilogueCvt);
-  int LDSUsage = std::max(tmpCvtLDS, newCvtLDS);
-  res.LDS = LDSUsage;
-  newEpilogueCvt.erase();
-  tmpCvt.erase();
+  int tmpCvtLDS = mlir::triton::AMD::getCvtOpLDSUsage(srcTy, intermediateTy);
+  int newCvtLDS = mlir::triton::AMD::getCvtOpLDSUsage(intermediateTy, dstTy);
+  res.LDS = std::max(tmpCvtLDS, newCvtLDS);
   return res;
 }
 

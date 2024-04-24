@@ -66,7 +66,7 @@ class OptimizeAMDLDSUsage
   // decomposing cvt(mfma->blocked) op into 2 conversions: cvt(mfma->mfma_tmp)
   // and cvt(mfma_tmp->blocked), where mfma_tmp has WarpsPerCta attribute that
   // minimizes uses of LDS for these conversions.
-  void tryMinimizeLDS(triton::gpu::ConvertLayoutOp cvtOp) {
+  void tryFitCvtIntoLDS(triton::gpu::ConvertLayoutOp cvtOp, int targetLDSSize) {
     OpBuilder builder(cvtOp);
 
     auto srcType = cvtOp.getSrc().getType();
@@ -74,11 +74,6 @@ class OptimizeAMDLDSUsage
 
     auto srcEnc = srcType.getEncoding();
     auto dstEnc = dstType.getEncoding();
-
-    auto currLDSUsage = mlir::triton::AMD::getCvtOpLDSUsage(cvtOp);
-    if (currLDSUsage <= LDSSize) {
-      return;
-    }
 
     auto ctx = srcEnc.getContext();
     auto rank = srcType.getShape().size();
@@ -115,13 +110,14 @@ class OptimizeAMDLDSUsage
     for (int i = 0; i < tmpLayouts.size(); i++) {
       auto resources = mlir::triton::AMD::estimateResourcesForReplacement(
           builder, cvtOp, tmpLayouts[i]);
-      if (resources.LDS <= LDSSize && resources.LDS < minLDSUsage) {
+      // TODO analyze performance along with LDS consumption
+      if (resources.LDS < minLDSUsage) {
         minLDSUsage = resources.LDS;
         minIdx = i;
       }
     }
 
-    if (minIdx == -1) {
+    if (minIdx == -1 || minLDSUsage > targetLDSSize) {
       return;
     }
 
@@ -164,9 +160,36 @@ class OptimizeAMDLDSUsage
     return liveBuffers;
   }
 
-  SmallVector<triton::gpu::ConvertLayoutOp>
-  findLDSBottleneck(ModuleAllocation &allocAnalysis, FunctionOpInterface func) {
-    SmallVector<triton::gpu::ConvertLayoutOp> candidates;
+  struct LDSBottleneckOperation {
+    triton::gpu::ConvertLayoutOp op;
+    int64_t LDSSizeTarget;
+  };
+
+  /**
+   * Assuming that all buffer above scratch buffer in memory space can be
+   * shifted down in memory, this function gives optimistic estimation of memory
+   * space available for scratch buffer.
+   */
+  int64_t
+  computeMaxScratchBufferSize(triton::gpu::ConvertLayoutOp op,
+                              Allocation *allocation,
+                              ArrayRef<Allocation::BufferId> liveBuffers) {
+    int totalSize = 0;
+    auto scratchBufferId = allocation->getBufferId(op.getOperation());
+    int64_t scratchBufferSize = allocation->getAllocatedSize(scratchBufferId);
+    size_t totalLDSConsumption = 0;
+    for (auto buf : liveBuffers)
+      totalLDSConsumption = std::max(
+          totalLDSConsumption, allocation->getAllocatedInterval(buf).end());
+    int64_t freeRequired = totalLDSConsumption - LDSSize;
+    auto maxScratchSize = std::max(0l, scratchBufferSize - freeRequired);
+    return maxScratchSize;
+  }
+
+  SmallVector<LDSBottleneckOperation>
+  findLDSBottleneckLayoutConvert(ModuleAllocation &allocAnalysis,
+                                 FunctionOpInterface func) {
+    SmallVector<LDSBottleneckOperation> candidates;
     auto funcAnalysis = allocAnalysis.getFuncData(func);
     auto liveBuffers = analyzeBufferLiveness(func, funcAnalysis);
 
@@ -177,7 +200,9 @@ class OptimizeAMDLDSUsage
         auto offset = funcAnalysis->getOffset(bufId);
         auto size = funcAnalysis->getAllocatedSize(bufId);
         if (offset + size > LDSSize) {
-          candidates.push_back(cvtOp);
+          auto maxScratchBufferSize = computeMaxScratchBufferSize(
+              cvtOp, funcAnalysis, liveBuffers[cvtOp]);
+          candidates.push_back({cvtOp, maxScratchBufferSize});
           break;
         }
       }
@@ -199,10 +224,11 @@ public:
       auto rootFunctions = allocAnalysis.getRoots();
       for (auto rootFunc : rootFunctions) {
         // Find operations with peak LDS consumption
-        auto candidates = findLDSBottleneck(allocAnalysis, rootFunc);
-        // Try to transform candidates to minimize LDS usage
+        auto candidates =
+            findLDSBottleneckLayoutConvert(allocAnalysis, rootFunc);
+        // Try to transform candidate operations to fit them into LDS
         for (auto candidate : candidates)
-          tryMinimizeLDS(candidate);
+          tryFitCvtIntoLDS(candidate.op, candidate.LDSSizeTarget);
       }
     }
   }

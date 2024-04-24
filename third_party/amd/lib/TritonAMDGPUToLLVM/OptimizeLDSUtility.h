@@ -4,7 +4,9 @@
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
 namespace mlir::triton::AMD {
 
-int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp &cvtOp);
+int getCvtOpLDSUsage(RankedTensorType srcTy, RankedTensorType dstTy);
+
+int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp op);
 
 bool isPowerOfTwo(unsigned x);
 
@@ -21,11 +23,11 @@ Attribute createTmpLayout(Attribute layout, ArrayRef<unsigned> warpsPerCTA);
 /**
  * Creates two chained convert layout operations
  *
- * %1 = cvtOp %0 (srcLayout -> dstLayout)
+ * %1 = cvtOp %0 (srcLayout -> dstLayout) // original operation
  * ->
- * %1 = cvtOp %0 (srcLayout -> dstLayout)
- * %2 = cvtOp %0 (srcLayout -> tmpLayout)
- * %3 = cvtOp %1 (tmpLayout -> dstLayout)
+ * %1 = cvtOp %0 (srcLayout -> dstLayout) // original operation
+ * %2 = cvtOp %0 (srcLayout -> tmpLayout) // <returned pair>.first
+ * %3 = cvtOp %2 (tmpLayout -> dstLayout) // <returned pair>.second
  *
  * @param builder
  * @param cvtOp original operation
