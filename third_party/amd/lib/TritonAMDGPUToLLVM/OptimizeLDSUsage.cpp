@@ -45,27 +45,48 @@ namespace {
 class OptimizeAMDLDSUsage
     : public mlir::triton::impl::OptimizeAMDLDSUsageBase<OptimizeAMDLDSUsage> {
 
-  // Try to reduce LDS usage of cvt op.
+  // Try to reduce LDS usage of convert op by adding tmp layout in conversion:
+  //
+  // %1 = convert %0 (src layout -> dst layout)
+  //     ->
+  // %1 = convert %0 (src layout -> tmp)
+  // %2 = convert %1 (tmp -> dst layout)
+  //
+  // The implicit LDS usage of convert op depends on src and dst layouts
   //
   // Consider mfma->blocked conversion as an example.
-  // LDS reduction is possible by changing the shape of WarpsPerCta attribute in
-  // mfma layout. The implicit LDS usage of cvt(mfma->blocked) op depends on the
-  // number of warps per CTA that mfma layout uses along x dimension and block
-  // layout uses across y dimension.
   //
-  // clang-format off
+  // tensor shape: [128, 128]
+  // mfma layout: warpsPerCTA = [1, 4], instrShape = [32, 32]
+  // blocked layout: sizePerThread = [1, 4], threadsPerWarp = [32, 2],
+  // warpsPerCTA = [4, 1]
   //
-  // LDS usage of this op is roughly calculated as:
-  // LDS_USAGE = getShapePerCTA(mfma_layout)[0] * getShapePerCTA(blocked_layout)[1] * sizeof(data_type)
-  // LDS_USAGE = warpsPerCTA(mfma_layout)[0] * warpsPerCta(blocked_layout)[1] * C,
-  // where C = 32 * sizePerWarp(blocked_layout)[1] * threadsPerWarp(blocked_layout)[1] * sizeof(data_type)
+  // minimal mfma tile is: [1*32, 4*32] = [32, 128]
+  // minimal blocked tile is: [1*32*4, 4*2*1] = [128, 8]
   //
-  // clang-format on
+  // Roughtly scratch buffer shape for conversion is:
+  // [max(32, 128), max(128, 16)] = [128, 128].
   //
-  // When LDS_USAGE exceeds the size of LDS, try to lower LDS usage by
-  // decomposing cvt(mfma->blocked) op into 2 conversions: cvt(mfma->mfma_tmp)
-  // and cvt(mfma_tmp->blocked), where mfma_tmp has WarpsPerCta attribute that
-  // minimizes uses of LDS for these conversions.
+  // This shape could be reduces by introducing intermediate
+  // layout and replacing old convert operations with two new conversions:
+  //
+  // %1 = convert %0 (mfma -> blocked)
+  //     ->
+  // %1 = convert %0 (mfma -> tmp)
+  // %2 = convert %1 (tmp -> blocked)
+  //
+  // Let's consider tmp as blocked layout:
+  // sizePerThread = [1, 4], threadsPerWarp = [32, 2], warpsPerCTA = [1, 4]
+  // Tmp layout scratch buffer has shape: [1*32*1, 4*2*4] = [32, 32]
+  //
+  // With intermediate layout we have two scratch buffers:
+  //
+  // %1 = convert %0 (mfma -> tmp): [max(32, 32), max(128, 32)] = [32, 128]
+  // %2 = convert %1 (tmp -> blocked): [max(32, 128), max(32, 32)] = [128, 32]
+  //
+  // Both of these buffers are 4x times smaller than original one and their live
+  // times do not intersect, therefore this transformation lowers LDS
+  // consumption.
   void tryFitCvtIntoLDS(triton::gpu::ConvertLayoutOp cvtOp, int targetLDSSize) {
     OpBuilder builder(cvtOp);
 
