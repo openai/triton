@@ -154,33 +154,6 @@ class OptimizeAMDLDSUsage
     cvtOp.erase();
   }
 
-  /**
-   * @brief Get live information for LDS buffers in function
-   * @return mapping from operation to list of live LDS buffers
-   */
-  std::map<mlir::Operation *, SmallVector<Allocation::BufferId>>
-  analyzeBufferLiveness(FunctionOpInterface func,
-                        const Allocation *allocations) {
-    std::map<mlir::Operation *, SmallVector<Allocation::BufferId>> liveBuffers;
-
-    mlir::Liveness liveness(func);
-    auto analyzeOperation = [&](mlir::Operation *op) -> void {
-      auto scratchBuffer = allocations->getBufferId(op);
-      if (scratchBuffer != Allocation::InvalidBufferId)
-        liveBuffers[op].push_back(scratchBuffer);
-      for (auto result : op->getOpResults()) {
-        auto bufferId = allocations->getBufferId(result);
-        if (bufferId == Allocation::InvalidBufferId)
-          continue;
-        auto liveOperations = liveness.resolveLiveness(result);
-        for (auto depOp : liveOperations)
-          liveBuffers[depOp].push_back(bufferId);
-      }
-    };
-    func.walk(analyzeOperation);
-    return liveBuffers;
-  }
-
   struct LDSBottleneckOperation {
     triton::gpu::ConvertLayoutOp op;
     int64_t LDSSizeTarget;
@@ -212,7 +185,7 @@ class OptimizeAMDLDSUsage
                                  FunctionOpInterface func) {
     SmallVector<LDSBottleneckOperation> candidates;
     auto funcAnalysis = allocAnalysis.getFuncData(func);
-    auto liveBuffers = analyzeBufferLiveness(func, funcAnalysis);
+    auto liveBuffers = funcAnalysis->getLiveBuffers();
 
     func.walk([&](triton::gpu::ConvertLayoutOp cvtOp) -> void {
       auto opBuffer = funcAnalysis->getBufferId(cvtOp.getOperation());

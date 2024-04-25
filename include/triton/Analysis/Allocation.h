@@ -141,6 +141,9 @@ public:
   /// Returns the size of total shared memory allocated
   size_t getSharedMemorySize() const { return sharedMemorySize; }
 
+  /// Returns mapping from operation to list of live LDS buffers
+  std::map<Operation *, SmallVector<BufferId>> getLiveBuffers();
+
 private:
   /// A class that represents a shared memory buffer
   struct BufferT {
