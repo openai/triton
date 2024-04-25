@@ -38,23 +38,28 @@ int getCvtOpLDSUsage(triton::gpu::ConvertLayoutOp op) {
 
 bool isPowerOfTwo(unsigned x) { return x && (x & (x - 1)) == 0; }
 
+static void stepFactorizationPow2(std::vector<SmallVector<unsigned>> &factors,
+                                  SmallVector<unsigned> &curFactor,
+                                  int restTwos, int dim) {
+  if (dim == curFactor.size()) {
+    if (restTwos == 0)
+      factors.push_back(curFactor);
+    return;
+  }
+  curFactor[dim] = 1;
+  for (int i = 0; i <= restTwos; ++i) {
+    stepFactorizationPow2(factors, curFactor, restTwos - i, dim + 1);
+    curFactor[dim] *= 2;
+  }
+}
+
 std::vector<SmallVector<unsigned>> factorizePowerOf2(int n, int rank) {
   assert(isPowerOfTwo(n));
-  assert(rank == 2);
   int x = log2(n);
-  std::vector<SmallVector<unsigned>> pairs;
-
-  for (int i = 0; i <= x / 2; ++i) {
-    int j = x - i;
-    SmallVector<unsigned> sample(2);
-    sample[0] = pow(2, i);
-    sample[1] = pow(2, j);
-    pairs.push_back(sample);
-    std::swap(sample[0], sample[1]);
-    pairs.push_back(sample);
-  }
-
-  return pairs;
+  std::vector<SmallVector<unsigned>> factors;
+  SmallVector<unsigned> curFactor(rank, 1);
+  stepFactorizationPow2(factors, curFactor, x, 0);
+  return factors;
 }
 
 Attribute createTmpLayout(Attribute layout, ArrayRef<unsigned> warpsPerCTA) {
