@@ -21,6 +21,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #include "OptimizeLDSUtility.h"
+#include "TargetInfo.h"
 #include "TritonAMDGPUToLLVM/Passes.h"
 #include "mlir/Analysis/Liveness.h"
 #include "mlir/Pass/Pass.h"
@@ -44,6 +45,8 @@ namespace {
 
 class OptimizeAMDLDSUsage
     : public mlir::triton::impl::OptimizeAMDLDSUsageBase<OptimizeAMDLDSUsage> {
+
+  int LDSLimit;
 
   // Try to reduce LDS usage of convert op by adding tmp layout in conversion:
   //
@@ -103,7 +106,7 @@ class OptimizeAMDLDSUsage
 
     // Find all possible shapes of WarpsPerCTA by finding all possible
     // factorizations of numWarps. Pick shape for which both conversions in
-    // decomposition use LDS less than LDSSize and for which sum of LDS usage
+    // decomposition use LDS less than LDSLimit and for which sum of LDS usage
     // is minimal. If no such shape exists, do not decompose.
     auto factorizedNumWarps =
         mlir::triton::AMD::factorizePowerOf2(numWarps, rank);
@@ -126,7 +129,7 @@ class OptimizeAMDLDSUsage
       tmpLayouts.push_back(fallbackLayout);
     }
 
-    unsigned minLDSUsage = 2 * LDSSize;
+    unsigned minLDSUsage = 2 * LDSLimit;
     int minIdx = -1;
     for (int i = 0; i < tmpLayouts.size(); i++) {
       auto resources = mlir::triton::AMD::estimateResourcesForReplacement(
@@ -142,15 +145,12 @@ class OptimizeAMDLDSUsage
       return;
     }
 
-    triton::gpu::ConvertLayoutOp tmpCvt;
-    triton::gpu::ConvertLayoutOp newEpilogueCvt;
-
     assert(minIdx >= 0 && minIdx < tmpLayouts.size());
     auto tmpLayout = tmpLayouts[minIdx];
-    std::tie(tmpCvt, newEpilogueCvt) =
+    auto replacementCvts =
         mlir::triton::AMD::createNewConvertOps(builder, cvtOp, tmpLayout);
 
-    cvtOp.replaceAllUsesWith(newEpilogueCvt.getResult());
+    cvtOp.replaceAllUsesWith(replacementCvts.second.getResult());
     cvtOp.erase();
   }
 
@@ -165,19 +165,20 @@ class OptimizeAMDLDSUsage
    * space available for scratch buffer.
    */
   int64_t
-  computeMaxScratchBufferSize(triton::gpu::ConvertLayoutOp op,
-                              Allocation *allocation,
-                              ArrayRef<Allocation::BufferId> liveBuffers) {
+  computeTargetScratchBufferSize(triton::gpu::ConvertLayoutOp op,
+                                 Allocation *allocation,
+                                 ArrayRef<Allocation::BufferId> liveBuffers) {
     int totalSize = 0;
     auto scratchBufferId = allocation->getBufferId(op.getOperation());
     int64_t scratchBufferSize = allocation->getAllocatedSize(scratchBufferId);
     size_t totalLDSConsumption = 0;
-    for (auto buf : liveBuffers)
+    for (auto buf : liveBuffers) {
       totalLDSConsumption = std::max(
           totalLDSConsumption, allocation->getAllocatedInterval(buf).end());
-    int64_t freeRequired = totalLDSConsumption - LDSSize;
-    auto maxScratchSize = std::max(0l, scratchBufferSize - freeRequired);
-    return maxScratchSize;
+    }
+    int64_t freeRequired = totalLDSConsumption - LDSLimit;
+    auto targetScratchSize = std::max(0l, scratchBufferSize - freeRequired);
+    return targetScratchSize;
   }
 
   SmallVector<LDSBottleneckOperation>
@@ -188,33 +189,41 @@ class OptimizeAMDLDSUsage
     auto liveBuffers = funcAnalysis->getLiveBuffers();
 
     func.walk([&](triton::gpu::ConvertLayoutOp cvtOp) -> void {
-      auto opBuffer = funcAnalysis->getBufferId(cvtOp.getOperation());
-      assert(opBuffer != Allocation::InvalidBufferId);
-      for (auto bufId : liveBuffers[cvtOp]) {
-        auto offset = funcAnalysis->getOffset(bufId);
-        auto size = funcAnalysis->getAllocatedSize(bufId);
-        if (offset + size > LDSSize) {
-          auto maxScratchBufferSize = computeMaxScratchBufferSize(
-              cvtOp, funcAnalysis, liveBuffers[cvtOp]);
-          candidates.push_back({cvtOp, maxScratchBufferSize});
-          break;
-        }
-      }
+      auto cvtBuffer = funcAnalysis->getBufferId(cvtOp.getOperation());
+      assert(cvtBuffer != Allocation::InvalidBufferId);
+
+      auto targetScratchBufferSize = computeTargetScratchBufferSize(
+          cvtOp, funcAnalysis, liveBuffers[cvtOp]);
+      auto currentLDSConsumption = funcAnalysis->getAllocatedSize(cvtBuffer);
+      if (currentLDSConsumption > targetScratchBufferSize)
+        candidates.push_back({cvtOp, targetScratchBufferSize});
     });
     return candidates;
   }
 
 public:
-  OptimizeAMDLDSUsage(int32_t LDSSize)
+  OptimizeAMDLDSUsage(StringRef targetArch, int customLDSLimit)
       : OptimizeAMDLDSUsageBase<OptimizeAMDLDSUsage>() {
-    this->LDSSize = LDSSize;
+    this->targetArch = targetArch.str();
+    this->customLDSLimit = customLDSLimit;
   }
 
   void runOnOperation() override {
+    if (customLDSLimit == 0) {
+      if (targetArch == "") {
+        std::string message =
+            this->getName().str() + " requires architecture name";
+        llvm_unreachable(message.c_str());
+      }
+      triton::AMD::TargetInfo targetInfo(targetArch.c_str());
+      LDSLimit = targetInfo.getSharedMemorySize();
+    } else {
+      LDSLimit = customLDSLimit;
+    }
     ModuleOp mod = getOperation();
 
     ModuleAllocation allocAnalysis(mod);
-    if (allocAnalysis.getSharedMemorySize() > LDSSize) {
+    if (allocAnalysis.getSharedMemorySize() > LDSLimit) {
       auto rootFunctions = allocAnalysis.getRoots();
       for (auto rootFunc : rootFunctions) {
         // Find operations with peak LDS consumption
@@ -237,8 +246,8 @@ namespace triton {
 namespace AMD {
 
 std::unique_ptr<OperationPass<ModuleOp>>
-createOptimizeLDSUsagePass(int32_t LDSSize) {
-  return std::make_unique<OptimizeAMDLDSUsage>(LDSSize);
+createOptimizeLDSUsagePass(StringRef targetArch, int customLDSLimit) {
+  return std::make_unique<OptimizeAMDLDSUsage>(targetArch, customLDSLimit);
 }
 
 } // namespace AMD

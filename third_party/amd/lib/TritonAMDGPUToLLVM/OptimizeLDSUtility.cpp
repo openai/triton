@@ -112,11 +112,6 @@ estimateResourcesForReplacement(OpBuilder builder,
                                 mlir::triton::gpu::ConvertLayoutOp cvtOp,
                                 Attribute tmpLayout) {
   Resources res;
-  res.LDS = std::numeric_limits<typeof(res.LDS)>::max();
-
-  triton::gpu::ConvertLayoutOp tmpCvt;
-  triton::gpu::ConvertLayoutOp newEpilogueCvt;
-
   RankedTensorType srcTy = cvtOp.getSrc().getType();
   RankedTensorType dstTy = cvtOp.getType();
   RankedTensorType intermediateTy = RankedTensorType::get(
