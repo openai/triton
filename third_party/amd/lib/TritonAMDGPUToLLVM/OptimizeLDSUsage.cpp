@@ -111,6 +111,16 @@ class OptimizeAMDLDSUsage
     auto factorizedNumWarps =
         mlir::triton::AMD::factorizePowerOf2(numWarps, rank);
     // Create a list of temporary layouts
+    SmallVector<unsigned> elemsPerThread(rank, 1);
+    SmallVector<unsigned> threadsPerWarp(rank, 1);
+    threadsPerWarp[rank - 1] = warpSize / 8;
+    threadsPerWarp[rank - 2] = warpSize / threadsPerWarp[rank - 1];
+    auto layoutCTA = triton::gpu::getCTALayout(srcEnc);
+    auto order = triton::gpu::getOrder(srcEnc);
+    SmallVector<unsigned> dummyWarpsPerCTA(rank, 1);
+    auto baseFallbackLayout = triton::gpu::BlockedEncodingAttr::get(
+        ctx, elemsPerThread, threadsPerWarp, dummyWarpsPerCTA, order,
+        layoutCTA);
     SmallVector<Attribute> tmpLayouts;
     for (int i = 0; i < factorizedNumWarps.size(); i++) {
       auto warpsPerCTA = factorizedNumWarps[i];
@@ -118,15 +128,8 @@ class OptimizeAMDLDSUsage
           mlir::triton::AMD::createTmpLayout(srcEnc, warpsPerCTA));
       tmpLayouts.push_back(
           mlir::triton::AMD::createTmpLayout(dstEnc, warpsPerCTA));
-      SmallVector<unsigned> elemsPerThread(rank, 1);
-      SmallVector<unsigned> threadsPerWarp(rank, 1);
-      threadsPerWarp[rank - 1] = warpSize / 8;
-      threadsPerWarp[rank - 2] = warpSize / threadsPerWarp[rank - 1];
-      auto order = triton::gpu::getOrder(srcEnc);
-      auto layoutCTA = triton::gpu::getCTALayout(srcEnc);
-      auto fallbackLayout = triton::gpu::BlockedEncodingAttr::get(
-          ctx, elemsPerThread, threadsPerWarp, warpsPerCTA, order, layoutCTA);
-      tmpLayouts.push_back(fallbackLayout);
+      tmpLayouts.push_back(
+          mlir::triton::AMD::createTmpLayout(baseFallbackLayout, warpsPerCTA));
     }
 
     unsigned minLDSUsage = 2 * LDSLimit;
