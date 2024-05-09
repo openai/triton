@@ -1,5 +1,5 @@
-#include "TargetInfo.h"
 #include "OptimizeLDSUtility.h"
+#include "TargetInfo.h"
 #include "TritonAMDGPUToLLVM/Passes.h"
 #include "mlir/Pass/Pass.h"
 #include "triton/Analysis/Allocation.h"
