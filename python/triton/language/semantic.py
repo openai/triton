@@ -1367,7 +1367,7 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
     assert lhs_rank == rhs_rank == 2 or lhs_rank == rhs_rank == 3, f"Both inputs must be either 2D or 3D; (lhs: {lhs.shape} vs rhs: {rhs.shape})"
     assert lhs.shape[-1].value == rhs.shape[
         -2].value, f"First input shape ({lhs.shape}) and second input shape {rhs.shape} are not compatible for matmul (second index of first shape ({lhs.shape[-1].value}) must be equal to first index of second shape ({rhs.shape[-2].value})"
-    if "gfx9" in builder.options.arch:
+    if hasattr(builder.options, "arch") and "gfx9" in builder.options.arch:
         assert lhs.shape[-2].value >= 16 and lhs.shape[-1].value >= 8 \
             and rhs.shape[-1].value >= 16, \
             f"The first input shape MxN = {lhs.shape} and the second input shape NxK = {rhs.shape} must have M>=16, N>=16, K>=8 for arch gfx9x"
