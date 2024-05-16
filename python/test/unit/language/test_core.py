@@ -35,7 +35,7 @@ def is_hip():
 def get_arch():
     if is_interpreter():
         return ""
-    return triton.runtime.driver.active.get_current_target().arch
+    return str(triton.runtime.driver.active.get_current_target().arch)
 
 
 int_dtypes = ['int8', 'int16', 'int32', 'int64']
