@@ -10,6 +10,7 @@ add_triton_library(TritonGPUToLLVM
     MakeRangeOpToLLVM.cpp
     HistogramOpToLLVM.cpp
     AllocateSharedMemory.cpp
+    PerfCollection.cpp
     ReduceOpToLLVM.cpp
     ScanOpToLLVM.cpp
     ConvertLayoutOpToLLVM.cpp

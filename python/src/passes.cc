@@ -62,6 +62,7 @@ void init_triton_passes_ttgpuir(py::module &&m) {
                      createReduceDataDuplicationPass);
   ADD_PASS_WRAPPER_0("add_allocate_shared_memory",
                      createAllocateSharedMemoryPass);
+  ADD_PASS_WRAPPER_0("add_perf_collection", createPerfCollectionPass);
 }
 
 void init_triton_passes_convert(py::module &&m) {

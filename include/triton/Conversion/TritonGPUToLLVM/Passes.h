@@ -19,6 +19,7 @@ namespace triton {
 
 namespace gpu {
 std::unique_ptr<OperationPass<ModuleOp>> createAllocateSharedMemoryPass();
+std::unique_ptr<OperationPass<ModuleOp>> createPerfCollectionPass();
 
 } // namespace gpu
 
