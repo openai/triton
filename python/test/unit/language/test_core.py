@@ -3028,7 +3028,7 @@ def convert_fp8_to_fp32(x, device, dtype_str):
 @pytest.mark.parametrize(
     "M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dtype, out_dtype, kpack",
     [(*shape, 4, False, False, epilogue, input_precision, in_dtype, out_dtype, 1)
-     for shape in [(64, 64, 64), (32, 32, 32), (16, 16, 16), (16, 16, 8)]
+     for shape in [(64, 64, 64), (32, 32, 32), (16, 16, 16)] + ([(16, 16, 8)] if "gfx9" in get_arch() else [])
      for epilogue in ['none', 'trans', 'add-matrix', 'add-rows', 'add-cols', 'softmax', 'chain-dot']
      for input_precision in ['tf32', 'tf32x3', 'ieee']
      for in_dtype, out_dtype in [('float16', 'float16'), ('float16', 'float32'), ('float32', 'float32')]
@@ -3079,8 +3079,6 @@ def test_dot(M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dty
             pytest.skip("kpack too large for K")
         if not is_hip() and kpack == 2:
             pytest.skip("Skip duplicated tests on nv path")
-        if "gfx9" not in get_arch() and (M, N, K) == (16, 16, 8):
-            pytest.skip("Unsupported dot sizes on non-gfx9 path")
 
     torch.backends.cuda.matmul.allow_tf32 = input_precision == "tf32"
 
