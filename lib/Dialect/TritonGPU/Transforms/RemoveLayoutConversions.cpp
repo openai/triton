@@ -204,6 +204,7 @@ bool hasConvertToMMATransisitiveUse(Operation *op, Attribute encoding) {
   SmallVector<Value> queue = {op->getResult(0)};
   SetVector<Operation *> forwardSlice;
   llvm::SmallDenseSet<Value> seen;
+  llvm::SmallDenseSet<Operation *> seenOps;
   while (!queue.empty()) {
     Value currentValue = queue.back();
     queue.pop_back();
@@ -246,6 +247,15 @@ bool hasConvertToMMATransisitiveUse(Operation *op, Attribute encoding) {
           }
         }
       }
+
+      // If an op is visited more than once, it indicates a loop and that
+      // mulitple operands of the op share the same mma layout. Allow the
+      // propagation to avoid unncessary layout conversion within the loop.
+      if (op->hasTrait<OpTrait::Elementwise>()) {
+        if (!seenOps.insert(op).second == true)
+          return true;
+      }
+
       bool isMMAV3 =
           isa<NvidiaMmaEncodingAttr>(encoding) &&
           cast<NvidiaMmaEncodingAttr>(encoding).getVersionMajor() == 3;
