@@ -1319,7 +1319,7 @@ def _str_to_dot_input_precision(input_precision, builder):
 def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optional[str], max_num_imprecise_acc: int,
         out_dtype: tl.dtype, builder: ir.builder) -> tl.tensor:
 
-    def support_smaller_sizes():
+    def support_m16n16k8():
         return (hasattr(builder.options, "arch") and "gfx9" in str(builder.options.arch))
 
     def assert_dtypes_valid(lhs_dtype, rhs_dtype, options):
@@ -1370,7 +1370,7 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
     assert lhs_rank == rhs_rank == 2 or lhs_rank == rhs_rank == 3, f"Both inputs must be either 2D or 3D; (lhs: {lhs.shape} vs rhs: {rhs.shape})"
     assert lhs.shape[-1].value == rhs.shape[
         -2].value, f"First input shape ({lhs.shape}) and second input shape {rhs.shape} are not compatible for matmul (second index of first shape ({lhs.shape[-1].value}) must be equal to first index of second shape ({rhs.shape[-2].value})"
-    if support_smaller_sizes():
+    if support_m16n16k8():
         assert lhs.shape[-2].value >= 16 and lhs.shape[-1].value >= 8 \
             and rhs.shape[-1].value >= 16, \
             f"The first input shape MxN = {lhs.shape} and the second input shape NxK = {rhs.shape} must have M>=16, N>=16, K>=8 for arch gfx9x"
