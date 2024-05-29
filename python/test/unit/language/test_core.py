@@ -1488,6 +1488,29 @@ def test_tensor_atomic_rmw_block(num_ctas, device):
 
 
 @pytest.mark.interpreter
+def test_atomic_shared(device):
+    # test for https://github.com/triton-lang/triton/issues/3491
+    if not is_cuda():
+        return
+
+    @triton.jit
+    def kernel(in_ptr0, out_ptr0, XBLOCK: tl.constexpr):
+        xnumel = 10000
+        xoffset = tl.program_id(0) * XBLOCK
+        x0 = xoffset + tl.arange(0, XBLOCK)[:]
+        xmask = x0 < xnumel
+        tmp = tl.load(in_ptr0 + (x0), xmask)
+        tl.atomic_add(out_ptr0 + 2*x0, tmp, xmask)
+        tl.atomic_add(out_ptr0 + 2*x0 + 1, tmp + 1, xmask)
+
+    n = 10000
+    x = torch.ones(n, device='cuda', dtype=torch.float64)
+    y = torch.zeros(2*n, device='cuda', dtype=torch.float64)
+    h = kernel[(10,)](x, y, 1024)
+    assert "ld.shared" not in h.asm["ptx"]
+
+
+@pytest.mark.interpreter
 @pytest.mark.parametrize("sem", [None, 'acquire', 'release', 'acq_rel', 'relaxed'])
 @pytest.mark.parametrize("num_ctas", num_ctas_list)
 def test_atomic_cas(sem, num_ctas, device):
