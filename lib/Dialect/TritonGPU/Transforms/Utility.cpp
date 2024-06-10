@@ -603,6 +603,73 @@ scf::ForOp replaceForOpWithNewSignature(RewriterBase &rewriter, scf::ForOp loop,
   return newForOp;
 }
 
+scf::WhileOp replaceWhileOpWithNewSignature(
+    RewriterBase &rewriter, scf::WhileOp loop, ValueRange newIterOperands,
+    TypeRange newResultTypes,
+    SmallVectorImpl<std::tuple<Value, Value>> &replacements) {
+  OpBuilder::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(loop);
+
+  // Create a new loop before the existing one, with the extra operands.
+  auto operands = llvm::to_vector<4>(loop.getInits());
+  operands.append(newIterOperands.begin(), newIterOperands.end());
+
+  // Result and operand types
+  SmallVector<Type> resultTypes;
+  SmallVector<Type> argsTypesBefore;
+  for (auto res : loop.getResults())
+    resultTypes.push_back(res.getType());
+  for (auto type : newResultTypes)
+    resultTypes.push_back(type);
+  for (Value operand : operands)
+    argsTypesBefore.push_back(operand.getType());
+  scf::WhileOp newLoop =
+      rewriter.create<scf::WhileOp>(loop.getLoc(), resultTypes, operands);
+  newLoop->setAttrs(loop->getAttrs());
+
+  SmallVector<Location> bbArgLocsBefore(argsTypesBefore.size(), loop.getLoc());
+  SmallVector<Location> bbArgLocsAfter(resultTypes.size(), loop.getLoc());
+  rewriter.createBlock(&newLoop.getBefore(), {}, argsTypesBefore,
+                       bbArgLocsBefore);
+  rewriter.createBlock(&newLoop.getAfter(), {}, resultTypes, bbArgLocsAfter);
+
+  // Copy regions
+  for (int i = 0; i < loop.getNumRegions(); ++i)
+    newLoop->getRegion(i).front().getOperations().splice(
+        newLoop->getRegion(i).front().getOperations().begin(),
+        loop->getRegion(i).front().getOperations());
+
+  // Remap arguments
+  for (auto [oldArg, newArg] : llvm::zip(
+           loop.getBeforeArguments(), newLoop.getBeforeArguments().take_front(
+                                          loop.getBeforeArguments().size())))
+    rewriter.replaceAllUsesWith(oldArg, newArg);
+  for (auto [oldArg, newArg] : llvm::zip(loop.getAfterArguments(),
+                                         newLoop.getAfterArguments().take_front(
+                                             loop.getAfterArguments().size())))
+    rewriter.replaceAllUsesWith(oldArg, newArg);
+
+  // Stack the new results
+  for (auto it : llvm::zip(loop.getResults(), newLoop.getResults().take_front(
+                                                  loop.getNumResults())))
+    replacements.push_back(it);
+
+  return newLoop;
+}
+
+scf::WhileOp replaceWhileOpWithNewSignature(RewriterBase &rewriter,
+                                            scf::WhileOp loop,
+                                            ValueRange newIterOperands,
+                                            TypeRange newResultTypes) {
+  SmallVector<std::tuple<Value, Value>> replacements;
+  auto newWhileOp = replaceWhileOpWithNewSignature(
+      rewriter, loop, newIterOperands, newResultTypes, replacements);
+  for (auto &kv : replacements) {
+    rewriter.replaceAllUsesWith(std::get<0>(kv), std::get<1>(kv));
+  }
+  return newWhileOp;
+}
+
 scf::IfOp replaceIfOpWithNewSignature(
     RewriterBase &rewriter, scf::IfOp ifOp, TypeRange newResultTypes,
     SmallVectorImpl<std::tuple<Value, Value>> &replacements) {
@@ -625,6 +692,16 @@ scf::IfOp replaceIfOpWithNewSignature(
                            newIf.getResults().take_front(ifOp.getNumResults())))
     replacements.push_back(it);
   return newIf;
+}
+
+scf::IfOp replaceIfOpWithNewSignature(RewriterBase &rewriter, scf::IfOp ifOp,
+                                      TypeRange newResultTypes) {
+  SmallVector<std::tuple<Value, Value>> replacements;
+  auto newIfOp =
+      replaceIfOpWithNewSignature(rewriter, ifOp, newResultTypes, replacements);
+  for (auto &kv : replacements)
+    rewriter.replaceAllUsesWith(std::get<0>(kv), std::get<1>(kv));
+  return newIfOp;
 }
 
 Operation *cloneWithInferType(mlir::OpBuilder &rewriter, Operation *op,
