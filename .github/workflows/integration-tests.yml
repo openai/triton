@@ -299,7 +299,7 @@ jobs:
       matrix:
         runner: ${{fromJson(needs.Runner-Preparation.outputs.matrix-HIP)}}
     container:
-      image: rocm/pytorch:rocm6.1_ubuntu22.04_py3.10_pytorch_2.1.2
+      image: antiagainst/triton-torch-hip:torch2.4.0.dev20240520-hip6.1.1
       options: --device=/dev/kfd --device=/dev/dri --security-opt seccomp=unconfined --group-add video --user root
     steps:
       - name: Checkout
@@ -353,9 +353,6 @@ jobs:
         run: |
           mkdir -p ~/.triton
           ls -alh ~/.triton
-      - name: Update PATH
-        run: |
-          echo "/opt/rocm/llvm/bin" >> $GITHUB_PATH
       - name: Install pip dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -365,7 +362,7 @@ jobs:
           echo "PATH is '$PATH'"
           pip uninstall -y triton
           cd python
-          pip install -v -e .
+          pip install -v .
       - name: Run lit tests
         run: |
           cd python
