@@ -2515,3 +2515,47 @@ module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 :
     tt.return
   }
 }
+
+// -----
+
+#blocked = #triton_gpu.blocked<{sizePerThread = [1, 8], threadsPerWarp = [4, 8], warpsPerCTA = [8, 1], order = [1, 0]}>
+#mma = #triton_gpu.nvidia_mma<{versionMajor = 3, versionMinor = 0, warpsPerCTA = [4, 2], instrShape = [16, 64, 16]}>
+#mma1 = #triton_gpu.nvidia_mma<{versionMajor = 3, versionMinor = 0, warpsPerCTA = [8, 1], instrShape = [16, 32, 16]}>
+#shared = #triton_gpu.shared<{vec = 8, perPhase = 1, maxPhase = 8, order = [0, 1], hasLeadingOffset = true}>
+#shared1 = #triton_gpu.shared<{vec = 8, perPhase = 1, maxPhase = 8, order = [1, 0], hasLeadingOffset = true}>
+module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 8 : i32, triton_gpu.target = "cuda:90", "triton_gpu.threads-per-warp" = 32 : i32} {
+  // CHECK-LABEL: @dot_wait
+  tt.func public @dot_wait(%arg0: !tt.memdesc<128x64xf16, #shared, mutable>, %arg1: !tt.memdesc<64x128xf16, #shared1, mutable>, %arg2: i32, %arg3: tensor<64x1x!tt.ptr<f16>, #blocked>, %arg4: !tt.memdesc<64x128xf16, #shared1>) attributes {noinline = false} {
+    %c0_i32 = arith.constant 0 : i32
+    %c64_i32 = arith.constant 64 : i32
+    %cst = arith.constant dense<0.000000e+00> : tensor<64x128xf32, #mma>
+    %cst_0 = arith.constant dense<0.000000e+00> : tensor<64xf32, #triton_gpu.slice<{dim = 1, parent = #mma1}>>
+    %cst_1 = arith.constant dense<0xFF800000> : tensor<64xf32, #triton_gpu.slice<{dim = 1, parent = #mma1}>>
+    %cst_2 = arith.constant dense<1.44269502> : tensor<64x64xf32, #mma1>
+    %cst_3 = arith.constant dense<1.442380e+00> : tensor<64x64xf16, #blocked>
+    %0 = scf.for %arg5 = %c0_i32 to %arg2 step %c64_i32 iter_args(%arg6 = %cst) -> (tensor<64x128xf32, #mma>)  : i32 {
+      %2 = arith.divsi %arg5, %c64_i32 : i32
+      %3 = tt.splat %2 : i32 -> tensor<64x1xi32, #blocked>
+      %4 = tt.addptr %arg3, %3 : tensor<64x1x!tt.ptr<f16>, #blocked>, tensor<64x1xi32, #blocked>
+      %5 = tt.load %4 : tensor<64x1x!tt.ptr<f16>, #blocked>
+      %6 = tt.broadcast %5 : tensor<64x1xf16, #blocked> -> tensor<64x64xf16, #blocked>
+      %7 = arith.addf %6, %cst_3 : tensor<64x64xf16, #blocked>
+      %8 = triton_gpu.convert_layout %7 : tensor<64x64xf16, #blocked> -> tensor<64x64xf16, #mma1>
+      %9 = arith.extf %8 : tensor<64x64xf16, #mma1> to tensor<64x64xf32, #mma1>
+      %10 = arith.mulf %9, %cst_2 : tensor<64x64xf32, #mma1>
+      %11 = triton_nvidia_gpu.warp_group_dot %arg4, %arg0, %10 {inputPrecision = 0 : i32} : !tt.memdesc<64x128xf16, #shared1> * !tt.memdesc<128x64xf16, #shared, mutable> -> tensor<64x64xf32, #mma1>
+      %12:2 = triton_nvidia_gpu.warp_group_dot_wait %11, %arg6 {pendings = 0 : i32} : tensor<64x64xf32, #mma1>, tensor<64x128xf32, #mma>
+      %13 = arith.subf %12#0, %cst_2 : tensor<64x64xf32, #mma1>
+      %14 = arith.mulf %12#1, %cst : tensor<64x128xf32, #mma>
+      // CHECK: %[[W:.+]]:2 = triton_nvidia_gpu.warp_group_dot_wait
+      // CHECK: arith.subf %[[W]]#0, %{{.*}} : tensor<64x64xf32, #mma1>
+      // CHECK: arith.mulf %[[W]]#1, %{{.*}} : tensor<64x128xf32, #mma>
+      %15 = arith.truncf %13 : tensor<64x64xf32, #mma1> to tensor<64x64xf16, #mma1>
+      %16 = triton_gpu.convert_layout %15 : tensor<64x64xf16, #mma1> -> tensor<64x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #mma1}>>
+      %17 = triton_nvidia_gpu.warp_group_dot %16, %arg1, %14 {inputPrecision = 0 : i32} : tensor<64x64xf16, #triton_gpu.dot_op<{opIdx = 0, parent = #mma1}>> * !tt.memdesc<64x128xf16, #shared1, mutable> -> tensor<64x128xf32, #mma>
+      scf.yield %17 : tensor<64x128xf32, #mma>
+    }
+    %1 = triton_nvidia_gpu.warp_group_dot_wait %0 {pendings = 0 : i32} : tensor<64x128xf32, #mma>
+    tt.return
+  }
+}
