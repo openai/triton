@@ -232,6 +232,49 @@ private:
       return success();
     }
 
+    if (isMmaToMmaShortcut(srcTy, dstTy)) {
+      auto srcMmaLayout = dyn_cast<NvidiaMmaEncodingAttr>(srcLayout);
+      auto dstMmaLayout = dyn_cast<NvidiaMmaEncodingAttr>(dstLayout);
+      assert(srcMmaLayout.getVersionMajor() == 3 &&
+             dstMmaLayout.getVersionMajor() == 3 &&
+             "mma shortcut conversion only supported on hopoper");
+      auto inVals = unpackLLElements(loc, adaptor.getSrc(), rewriter);
+      auto dstStructType =
+          dyn_cast<LLVM::LLVMStructType>(typeConverter->convertType(dstTy));
+      auto outValsSize = dstStructType.getBody().size();
+      SmallVector<Value> outVals;
+      outVals.reserve(outValsSize);
+      auto inInstrShape =
+          cast<NvidiaMmaEncodingAttr>(srcLayout).getInstrShape();
+      auto outInstrShape =
+          cast<NvidiaMmaEncodingAttr>(dstLayout).getInstrShape();
+
+      if (inInstrShape[1] >= outInstrShape[1]) {
+        // Reduce the N-dimension of input values to fit in the output shape.
+        unsigned reduceBy = inInstrShape[1] / outInstrShape[1];
+        unsigned inN = inInstrShape[1] / 4;
+        unsigned inM = inVals.size() / inN;
+        unsigned outN = outInstrShape[1] / 4;
+        inM = inM / 2; // One warp owns two rows
+        inN = inN * 2;
+        outN = outN * 2;
+        for (unsigned i = 0; i < inM; ++i) {
+          for (unsigned j = 0; j < outN; j += 4) {
+            for (unsigned k = 0; k < 4; ++k)
+              outVals.push_back(inVals[i * inN + j + k]);
+          }
+        }
+        assert(outVals.size() == outValsSize);
+        Value result =
+            packLLElements(loc, typeConverter, outVals, rewriter, dstTy);
+        rewriter.replaceOp(op, result);
+        return success();
+      } else {
+        llvm_unreachable("unsupported mma shortcut conversion");
+        return failure();
+      }
+    }
+
     Value smemBase =
         LLVM::getSharedMemoryBase(loc, rewriter, op.getOperation());
     auto elemPtrTy = ptr_ty(rewriter.getContext(), 3);
