@@ -15,7 +15,7 @@ namespace triton {
 void LoadOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), getPtr(),
+  effects.emplace_back(MemoryEffects::Read::get(), &getPtrMutable(),
                        triton::GlobalMemory::get());
   if (getIsVolatile())
     effects.emplace_back(MemoryEffects::Write::get(),
