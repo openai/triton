@@ -15,6 +15,22 @@ import triton.language as tl
 # from typing import Tuple
 
 
+def test_grid() -> None:
+
+    def grid(META):
+        assert "num_warps" in META
+        assert "n_regs" in META
+        assert "size_smem" in META
+        return (1, 1)
+
+    @triton.jit
+    def kernel(x):
+        pass
+
+    # launch kernel
+    kernel[grid](6)
+
+
 def test_metadata() -> None:
 
     used_hook = False

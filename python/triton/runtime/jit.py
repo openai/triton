@@ -661,6 +661,10 @@ class JITFunction(KernelInterface[T]):
                 # Arguments are passed as a dict to `grid`, by contract.
                 # TODO(jlebar): In the new launch API, pass the compiler flags as a
                 # second parameter to `grid`.
+                kernel._init_handles()
+                bound_args["num_warps"] = kernel.metadata.num_warps
+                bound_args["n_regs"] = kernel.n_regs
+                bound_args["size_smem"] = kernel.metadata.shared
                 grid = grid(bound_args)
             grid_size = len(grid)
             grid_0 = grid[0]
@@ -837,6 +841,7 @@ def jit(
            * python primitives,
            * builtins within the triton package,
            * arguments to this function,
+           * meta-parameters through keyword arguments or the :code:`META` dictionary argument,
            * other jit'd functions
 
     :param fn: the function to be jit-compiled
