@@ -89,18 +89,12 @@ size_t matchStallReasonsToIndices(
   for (size_t i = 0; i < numStallReasons; i++) {
     bool notIssued = std::string(stallReasonNames[i]).find("not_issued") !=
                      std::string::npos;
-    bool count = std::string(stallReasonNames[i]).find("sample_count") !=
-                 std::string::npos;
-    bool dropped =
-        std::string(stallReasonNames[i]).find("dropped") != std::string::npos;
-    // Count and dropped will be collected by default in CUPTI, so we don't want
-    // to ignore
-    if (!(notIssued || count || dropped))
-      continue;
     auto cuptiStallName = replace(stallReasonNames[i], "_", "");
     for (size_t j = 0; j < PCSamplingMetric::PCSamplingMetricKind::Count; j++) {
       auto metricName = toLower(PCSamplingMetric().getValueName(j));
       if (cuptiStallName.find(metricName) != std::string::npos) {
+        if (notIssued)
+          notIssuedStallReasonIndices.insert(stallReasonIndices[i]);
         stallReasonIndexToMetricIndex[stallReasonIndices[i]] = j;
         validIndex[i] = true;
         numValidStalls++;
@@ -347,14 +341,15 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
       auto *cubinData = getCubinData(pcData->cubinCrc);
       auto key =
           CubinData::LineInfoKey{pcData->functionIndex, pcData->pcOffset};
-      if (cubinData->lineInfo.find(key) == cubinData->lineInfo.end()) {
+      auto lineInfoIter = cubinData->lineInfo.find(key);
+      if (lineInfoIter == cubinData->lineInfo.end()) {
         auto [lineNumber, fileName, dirName] =
             getSassToSourceCorrelation(pcData->functionName, pcData->pcOffset,
                                        cubinData->cubin, cubinData->cubinSize);
-        cubinData->lineInfo[key].lineNumber = lineNumber;
-        cubinData->lineInfo[key].functionName = pcData->functionName;
-        cubinData->lineInfo[key].dirName = dirName;
-        cubinData->lineInfo[key].fileName = fileName;
+        lineInfoIter->second.lineNumber = lineNumber;
+        lineInfoIter->second.functionName = pcData->functionName;
+        lineInfoIter->second.dirName = dirName;
+        lineInfoIter->second.fileName = fileName;
       }
       auto &lineInfo = cubinData->lineInfo[key];
       for (size_t j = 0; j < pcData->stallReasonCount; ++j) {
@@ -375,7 +370,13 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
               configureData->stallReasonIndexToMetricIndex
                   [stallReason->pcSamplingStallReasonIndex]);
           auto samples = stallReason->samples;
-          auto metric = std::make_shared<PCSamplingMetric>(metricKind, samples);
+          auto stalledSamples =
+              configureData->notIssuedStallReasonIndices.count(
+                  stallReason->pcSamplingStallReasonIndex)
+                  ? 0
+                  : samples;
+          auto metric = std::make_shared<PCSamplingMetric>(metricKind, samples,
+                                                           stalledSamples);
           data->addMetric(scopeId, metric);
         }
       }
