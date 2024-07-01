@@ -40,11 +40,12 @@ def _build(name, src, srcdir, library_dirs, include_dirs, libraries):
     if scheme == 'posix_local':
         scheme = 'posix_prefix'
     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
-    include_dirs = include_dirs + [srcdir, py_include_dir]
+    custom_backend_dirs = set(os.getenv(var) for var in ('TRITON_CUDACRT_PATH', 'TRITON_CUDART_PATH'))
+    include_dirs = include_dirs + [srcdir, py_include_dir, *custom_backend_dirs]
     cc_cmd = [cc, src, "-O3", "-shared", "-fPIC", "-o", so]
     cc_cmd += [f'-l{lib}' for lib in libraries]
     cc_cmd += [f"-L{dir}" for dir in library_dirs]
-    cc_cmd += [f"-I{dir}" for dir in include_dirs]
+    cc_cmd += [f"-I{dir}" for dir in include_dirs if dir is not None]
     ret = subprocess.check_call(cc_cmd)
     if ret == 0:
         return so
