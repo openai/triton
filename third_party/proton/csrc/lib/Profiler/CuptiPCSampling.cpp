@@ -47,10 +47,11 @@ getSassToSourceCorrelation(const char *functionName, uint64_t pcOffset,
       .fileName = NULL,
       .dirName = NULL,
   };
+  // Get source can fail if the line mapping is not available so we don't check
   cupti::getSassToSourceCorrelation<false>(&sassToSourceParams);
   return std::make_tuple(sassToSourceParams.lineNumber,
-                         sassToSourceParams.fileName,
-                         sassToSourceParams.dirName);
+                         sassToSourceParams.dirName,
+                         sassToSourceParams.fileName);
 }
 
 std::pair<char **, uint32_t *>
@@ -238,7 +239,7 @@ CUpti_PCSamplingConfigurationInfo ConfigureData::configureSamplingBuffer() {
   sampleBufferInfo.attributeType =
       CUPTI_PC_SAMPLING_CONFIGURATION_ATTR_TYPE_SAMPLING_DATA_BUFFER;
   this->pcSamplingData =
-      allocPCSamplingData(ScratchBufferPCCount, numValidStallReasons);
+      allocPCSamplingData(DataBufferPCCount, numValidStallReasons);
   sampleBufferInfo.attributeData.samplingDataBufferData.samplingDataBuffer =
       &this->pcSamplingData;
   return sampleBufferInfo;
@@ -350,15 +351,8 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
         auto [lineNumber, fileName, dirName] =
             getSassToSourceCorrelation(pcData->functionName, pcData->pcOffset,
                                        cubinData->cubin, cubinData->cubinSize);
-        if (fileName == NULL) {
-          // No line info
-          cubinData->lineInfo[key] =
-              CubinData::LineInfoValue{0, pcData->functionName, "Unknown"};
-        } else {
-          cubinData->lineInfo[key] = CubinData::LineInfoValue{
-              lineNumber, pcData->functionName,
-              std::string(dirName) + "/" + std::string(fileName)};
-        }
+        cubinData->lineInfo.emplace(lineNumber, pcData->functionName, dirName,
+                                    fileName);
       }
       auto &lineInfo = cubinData->lineInfo[key];
       for (size_t j = 0; j < pcData->stallReasonCount; ++j) {
@@ -370,6 +364,11 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
           auto scopeId = externId;
           if (isAPI)
             scopeId = data->addScope(externId, lineInfo.functionName);
+          if (lineInfo.fileName)
+            scopeId = data->addScope(
+                scopeId, std::string(lineInfo.fileName) + ":" +
+                             std::string(lineInfo.functionName) + "@" +
+                             std::to_string(lineInfo.lineNumber));
           auto metricKind = static_cast<PCSamplingMetric::PCSamplingMetricKind>(
               configureData->stallReasonIndexToMetricIndex
                   [stallReason->pcSamplingStallReasonIndex]);

@@ -29,9 +29,17 @@ struct CubinData {
 
   struct LineInfoValue {
     uint32_t lineNumber;
-    std::string functionName;
-    // dirName + fileName
-    std::string fileName;
+    const char *functionName;
+    const char *dirName;
+    const char *fileName;
+
+    ~LineInfoValue() {
+      // XXX: Don't free up functionName as it might be reused at other places
+      if (dirName)
+        std::free(const_cast<char *>(dirName));
+      if (fileName)
+        std::free(const_cast<char *>(fileName));
+    }
   };
 
   std::map<LineInfoKey, LineInfoValue> lineInfo;
@@ -50,13 +58,6 @@ struct ConfigureData {
     }
     if (stallReasonIndices)
       std::free(stallReasonIndices);
-    if (pcSamplingData.pPcData) {
-      for (size_t i = 0; i < ScratchBufferPCCount; i++) {
-        if (pcSamplingData.pPcData[i].stallReason)
-          std::free(pcSamplingData.pPcData[i].stallReason);
-      }
-      std::free(pcSamplingData.pPcData);
-    }
   }
 
   void initialize(CUcontext context);
@@ -74,7 +75,7 @@ struct ConfigureData {
   // The amount of data copied from the hardware buffer each time
   static constexpr size_t ScratchBufferSize = 16 * 1024 * 1024;
   // The number of PCs copied from the scratch buffer each time
-  static constexpr size_t ScratchBufferPCCount = 1024;
+  static constexpr size_t DataBufferPCCount = 1024;
   // The sampling period in cycles = 2^frequency
   static constexpr uint32_t DefaultFrequency = 10;
 
