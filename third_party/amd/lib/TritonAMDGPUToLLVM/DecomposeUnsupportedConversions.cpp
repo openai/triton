@@ -6,7 +6,6 @@
 #include "triton/Analysis/Utility.h"
 #include "triton/Conversion/TritonGPUToLLVM/Patterns.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
-#include "triton/Dialect/Triton/IR/Utility.h"
 #include "triton/Dialect/TritonGPU/IR/Attributes.h"
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
 #include <numeric>
@@ -126,10 +125,10 @@ struct DecomposeUnsupportedAMDConversions
 
       auto srcEnc = srcType.getEncoding();
       auto dstBlocked =
-          dstType.getEncoding().dyn_cast<triton::gpu::BlockedEncodingAttr>();
+          dyn_cast<triton::gpu::BlockedEncodingAttr>(dstType.getEncoding());
 
       // TODO: Reduce LDS usage for WMMA dots
-      if (!srcEnc.isa<triton::gpu::AMDMfmaEncodingAttr>() || !dstBlocked) {
+      if (!isa<triton::gpu::AMDMfmaEncodingAttr>(srcEnc) || !dstBlocked) {
         return;
       }
 
