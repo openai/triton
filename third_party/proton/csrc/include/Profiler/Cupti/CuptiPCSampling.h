@@ -28,10 +28,10 @@ struct CubinData {
   };
 
   struct LineInfoValue {
-    uint32_t lineNumber;
-    const char *functionName;
-    const char *dirName;
-    const char *fileName;
+    uint32_t lineNumber{};
+    const char *functionName{};
+    const char *dirName{};
+    const char *fileName{};
 
     ~LineInfoValue() {
       // XXX: Don't free up functionName as it might be reused at other places
