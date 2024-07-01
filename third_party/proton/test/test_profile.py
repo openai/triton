@@ -62,9 +62,6 @@ def test_triton():
 
 
 def test_cudagraph():
-    if is_hip():
-        pytest.skip("HIP backend does not support profiling CUDA graphs")
-
     stream = torch.cuda.Stream()
     torch.cuda.set_stream(stream)
 
@@ -97,8 +94,9 @@ def test_cudagraph():
         torch.cuda.synchronize()
         proton.exit_scope()
         proton.finalize()
+
         data = json.load(f)
-        # CUDA graph may also invoke additional kernels to reset outputs
+        # CUDA/HIP graph may also invoke additional kernels to reset outputs
         # {torch.ones, add, foo, test}
         assert len(data[0]["children"]) >= 4
         # find the test frame
@@ -109,7 +107,10 @@ def test_cudagraph():
                 break
         assert test_frame is not None
         # {torch.ones, add, foo}
-        assert len(test_frame["children"]) >= 3
+        if is_hip():
+            assert len(test_frame["children"]) >= 2
+        else:
+            assert len(test_frame["children"]) >= 3
         assert test_frame["children"][0]["metrics"]["Time (ns)"] > 0
 
 

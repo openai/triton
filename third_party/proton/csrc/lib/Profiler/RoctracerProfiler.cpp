@@ -11,6 +11,7 @@
 
 #include <cstdlib>
 #include <deque>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <tuple>
@@ -74,12 +75,14 @@ convertActivityToMetric(const roctracer_record_t *activity) {
   std::shared_ptr<Metric> metric;
   switch (activity->kind) {
   case kHipVdiCommandKernel: {
-    metric = std::make_shared<KernelMetric>(
-        static_cast<uint64_t>(activity->begin_ns),
-        static_cast<uint64_t>(activity->end_ns), 1,
-        static_cast<uint64_t>(
-            DeviceInfo::instance().mapDeviceId(activity->device_id)),
-        static_cast<uint64_t>(DeviceType::HIP));
+    if (activity->begin_ns < activity->end_ns) {
+      metric = std::make_shared<KernelMetric>(
+          static_cast<uint64_t>(activity->begin_ns),
+          static_cast<uint64_t>(activity->end_ns), 1,
+          static_cast<uint64_t>(
+              DeviceInfo::instance().mapDeviceId(activity->device_id)),
+          static_cast<uint64_t>(DeviceType::HIP));
+    }
     break;
   }
   default:
@@ -88,25 +91,54 @@ convertActivityToMetric(const roctracer_record_t *activity) {
   return metric;
 }
 
-void processActivityKernel(size_t externId, std::set<Data *> &dataSet,
-                           const roctracer_record_t *activity, bool isAPI) {
+void processActivityKernel(
+    RoctracerProfiler::CorrIdToExternIdMap &corrIdToExternId, size_t externId,
+    std::set<Data *> &dataSet, const roctracer_record_t *activity, bool isAPI,
+    bool isGraph) {
   if (externId == Scope::DummyScopeId)
     return;
   auto correlationId = activity->correlation_id;
-  for (auto *data : dataSet) {
-    auto scopeId = externId;
-    if (isAPI)
-      scopeId = data->addScope(/*parentId=*/externId, activity->kernel_name);
-    data->addMetric(scopeId, convertActivityToMetric(activity));
+  auto [parentId, numInstances] = corrIdToExternId.at(correlationId);
+  if (!isGraph) {
+    for (auto *data : dataSet) {
+      auto scopeId = parentId;
+      if (isAPI)
+        scopeId = data->addScope(parentId, activity->kernel_name);
+      data->addMetric(scopeId, convertActivityToMetric(activity));
+    }
+  } else {
+    // Graph kernels
+    // A single grpah launch can trigger multiple kernels.
+    // Our solution is to construct the following maps:
+    // --- Application threads ---
+    // 1. Graph -> numKernels
+    // 2. GraphExec -> Graph
+    // --- Roctracer thread ---
+    // 3. corrId -> numKernels
+    for (auto *data : dataSet) {
+      auto externId = data->addScope(parentId, activity->kernel_name);
+      data->addMetric(externId, convertActivityToMetric(activity));
+    }
   }
+  --numInstances;
+  if (numInstances == 0) {
+    corrIdToExternId.erase(correlationId);
+  } else {
+    corrIdToExternId[correlationId].second = numInstances;
+  }
+  return;
 }
 
-void processActivity(size_t externId, std::set<Data *> &dataSet,
-                     const roctracer_record_t *record, bool isAPI) {
+void processActivity(RoctracerProfiler::CorrIdToExternIdMap &corrIdToExternId,
+                     RoctracerProfiler::ApiExternIdSet &apiExternIds,
+                     size_t externId, std::set<Data *> &dataSet,
+                     const roctracer_record_t *record, bool isAPI,
+                     bool isGraph) {
   switch (record->kind) {
   case 0x11F1: // Task - kernel enqueued by graph launch
   case kHipVdiCommandKernel: {
-    processActivityKernel(externId, dataSet, record, isAPI);
+    processActivityKernel(corrIdToExternId, externId, dataSet, record, isAPI,
+                          isGraph);
     break;
   }
   default:
@@ -123,6 +155,8 @@ std::pair<bool, bool> matchKernelCbId(uint32_t cbId) {
   bool isDriverApi = false;
   switch (cbId) {
   // TODO: switch to directly subscribe the APIs
+  case HIP_API_ID_hipStreamBeginCapture:
+  case HIP_API_ID_hipStreamEndCapture:
   case HIP_API_ID_hipExtLaunchKernel:
   case HIP_API_ID_hipExtLaunchMultiKernelMultiDevice:
   case HIP_API_ID_hipExtModuleLaunchKernel:
@@ -133,7 +167,9 @@ std::pair<bool, bool> matchKernelCbId(uint32_t cbId) {
   case HIP_API_ID_hipModuleLaunchKernel:
   case HIP_API_ID_hipGraphLaunch:
   case HIP_API_ID_hipModuleLaunchCooperativeKernel:
-  case HIP_API_ID_hipModuleLaunchCooperativeKernelMultiDevice: {
+  case HIP_API_ID_hipModuleLaunchCooperativeKernelMultiDevice:
+  case HIP_API_ID_hipGraphExecDestroy:
+  case HIP_API_ID_hipGraphInstantiate: {
     isRuntimeApi = true;
     break;
   }
@@ -160,18 +196,37 @@ struct RoctracerProfiler::RoctracerProfilerPimpl
   static void activityCallback(const char *begin, const char *end, void *arg);
 
   static constexpr size_t BufferSize = 64 * 1024 * 1024;
+
+  ThreadSafeMap<uint64_t, bool, std::unordered_map<uint64_t, bool>>
+      CorrIdToIsHipGraph;
+
+  ThreadSafeMap<hipGraphExec_t, hipGraph_t,
+                std::unordered_map<hipGraphExec_t, hipGraph_t>>
+      GraphExecToGraph;
+
+  ThreadSafeMap<hipGraph_t, uint32_t, std::unordered_map<hipGraph_t, uint32_t>>
+      GraphToNumInstances;
+
+  ThreadSafeMap<hipStream_t, uint32_t,
+                std::unordered_map<hipStream_t, uint32_t>>
+      StreamToCaptureCount;
+
+  ThreadSafeMap<hipStream_t, bool, std::unordered_map<hipStream_t, bool>>
+      StreamToCapture;
 };
 
 void RoctracerProfiler::RoctracerProfilerPimpl::apiCallback(
     uint32_t domain, uint32_t cid, const void *callbackData, void *arg) {
   auto [isRuntimeAPI, isDriverAPI] = matchKernelCbId(cid);
+
   if (!(isRuntimeAPI || isDriverAPI)) {
     return;
   }
+
   auto &profiler =
       dynamic_cast<RoctracerProfiler &>(RoctracerProfiler::instance());
-  auto &pImpl = dynamic_cast<RoctracerProfiler::RoctracerProfilerPimpl &>(
-      *profiler.pImpl);
+  auto *pImpl = dynamic_cast<RoctracerProfiler::RoctracerProfilerPimpl *>(
+      profiler.pImpl.get());
   if (domain == ACTIVITY_DOMAIN_HIP_API) {
     const hip_api_data_t *data = (const hip_api_data_t *)(callbackData);
     if (data->phase == ACTIVITY_API_PHASE_ENTER) {
@@ -179,8 +234,80 @@ void RoctracerProfiler::RoctracerProfilerPimpl::apiCallback(
       auto scopeId = Scope::getNewScopeId();
       threadState.record(scopeId);
       threadState.enterOp(scopeId);
-      profiler.correlation.correlate(data->correlation_id);
+      size_t numInstances = 1;
+      if (cid == HIP_API_ID_hipGraphLaunch) {
+        pImpl->CorrIdToIsHipGraph[data->correlation_id] = true;
+        hipGraphExec_t GraphExec = data->args.hipGraphLaunch.graphExec;
+        numInstances = std::numeric_limits<size_t>::max();
+        bool findGraph = false;
+        if (pImpl->GraphExecToGraph.contain(GraphExec)) {
+          hipGraph_t Graph = pImpl->GraphExecToGraph[GraphExec];
+          if (pImpl->GraphToNumInstances.contain(Graph)) {
+            numInstances = pImpl->GraphToNumInstances[Graph];
+            findGraph = true;
+          }
+        }
+        if (!findGraph)
+          std::cerr
+              << "[PROTON] Cannot find graph and it may cause a memory leak."
+                 "To avoid this problem, please start profiling before the "
+                 "graph is created."
+              << std::endl;
+      }
+      profiler.correlation.correlate(data->correlation_id, numInstances);
     } else if (data->phase == ACTIVITY_API_PHASE_EXIT) {
+      switch (cid) {
+      case HIP_API_ID_hipStreamBeginCapture: {
+        hipStream_t Stream = data->args.hipStreamBeginCapture.stream;
+        pImpl->StreamToCaptureCount[Stream] = 0;
+        pImpl->StreamToCapture[Stream] = true;
+        break;
+      }
+      case HIP_API_ID_hipStreamEndCapture: {
+        hipGraph_t Graph = *(data->args.hipStreamEndCapture.pGraph);
+        hipStream_t Stream = data->args.hipStreamEndCapture.stream;
+        // How many times did we capture a kernel launch for this stream
+        uint32_t StreamCaptureCount = pImpl->StreamToCaptureCount[Stream];
+        pImpl->GraphToNumInstances[Graph] = StreamCaptureCount;
+        pImpl->StreamToCapture.erase(Stream);
+      }
+      case HIP_API_ID_hipLaunchKernel: {
+        hipStream_t Stream = data->args.hipLaunchKernel.stream;
+        if (pImpl->StreamToCapture.contain(Stream))
+          pImpl->StreamToCaptureCount[Stream]++;
+        break;
+      }
+      case HIP_API_ID_hipExtLaunchKernel: {
+        hipStream_t Stream = data->args.hipExtLaunchKernel.stream;
+        if (pImpl->StreamToCapture.contain(Stream))
+          pImpl->StreamToCaptureCount[Stream]++;
+        break;
+      }
+      case HIP_API_ID_hipLaunchCooperativeKernel: {
+        hipStream_t Stream = data->args.hipLaunchCooperativeKernel.stream;
+        if (pImpl->StreamToCapture.contain(Stream))
+          pImpl->StreamToCaptureCount[Stream]++;
+        break;
+      }
+      case HIP_API_ID_hipModuleLaunchKernel: {
+        hipStream_t Stream = data->args.hipModuleLaunchKernel.stream;
+        if (pImpl->StreamToCapture.contain(Stream))
+          pImpl->StreamToCaptureCount[Stream]++;
+        break;
+      }
+      case HIP_API_ID_hipModuleLaunchCooperativeKernel: {
+        hipStream_t Stream = data->args.hipModuleLaunchCooperativeKernel.stream;
+        if (pImpl->StreamToCapture.contain(Stream))
+          pImpl->StreamToCaptureCount[Stream]++;
+        break;
+      }
+      case HIP_API_ID_hipGraphInstantiate: {
+        hipGraph_t Graph = data->args.hipGraphInstantiate.graph;
+        hipGraphExec_t GraphExec = *(data->args.hipGraphInstantiate.pGraphExec);
+        pImpl->GraphExecToGraph[GraphExec] = Graph;
+        break;
+      }
+      }
       threadState.exitOp();
       // Track outstanding op for flush
       profiler.correlation.submit(data->correlation_id);
@@ -192,6 +319,8 @@ void RoctracerProfiler::RoctracerProfilerPimpl::activityCallback(
     const char *begin, const char *end, void *arg) {
   auto &profiler =
       dynamic_cast<RoctracerProfiler &>(RoctracerProfiler::instance());
+  auto *pImpl = dynamic_cast<RoctracerProfiler::RoctracerProfilerPimpl *>(
+      profiler.pImpl.get());
   auto &dataSet = profiler.dataSet;
   auto &correlation = profiler.correlation;
 
@@ -212,7 +341,9 @@ void RoctracerProfiler::RoctracerProfilerPimpl::activityCallback(
             ? correlation.corrIdToExternId.at(record->correlation_id).first
             : Scope::DummyScopeId;
     auto isAPI = correlation.apiExternIds.contain(externId);
-    processActivity(externId, dataSet, record, isAPI);
+    bool isGraph = pImpl->CorrIdToIsHipGraph.contain(record->correlation_id);
+    processActivity(correlation.corrIdToExternId, correlation.apiExternIds,
+                    externId, dataSet, record, isAPI, isGraph);
     // Track correlation ids from the same stream and erase those <
     // correlationId
     correlation.corrIdToExternId.erase(record->correlation_id);
