@@ -3503,8 +3503,8 @@ def test_full(dtype_str, shape, device):
     assert torch.all(out_dynamic == 2)
 
 
-@pytest.mark.parametrize("literal, dtype_str", [(1e+50, "f64"), (1e+10, "f32"), (1.0, "f32"), ('float("inf")', "f32"),
-                                                ('float("-inf")', "f32"), ('float("nan")', "f32"),
+@pytest.mark.parametrize("literal, dtype_str", [(1e-45, "f64"), (1e+50, "f64"), (1e-44, "f32"), (1e+10, "f32"), (1.0, "f32"),
+                                                ('float("inf")', "f32"), ('float("-inf")', "f32"), ('float("nan")', "f32"),
                                                 ('float("-nan")', "f32"), (0., "f32"), (5, "i32"), (2**40, "i64")])
 def test_constexpr(literal, dtype_str, device):
 

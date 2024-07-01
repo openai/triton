@@ -131,7 +131,7 @@ def _to_tensor(x, builder, check_type: bool = True):
         else:
             raise ValueError(f'Nonrepresentable integer {x}.')
     elif isinstance(x, float):
-        min_float32 = 2**-126
+        min_float32 = 2**-126 * 2**-23
         max_float32 = (2 - 2**-23) * 2**127
         abs_x = __builtins__['abs'](x)
         if abs_x == float("inf") or\
