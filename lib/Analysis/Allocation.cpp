@@ -60,6 +60,11 @@ getCvtOrder(Attribute srcLayout, Attribute dstLayout) {
 SmallVector<unsigned> getRepShapeForCvtLayout(triton::gpu::ConvertLayoutOp op) {
   auto srcTy = op.getSrc().getType();
   auto dstTy = op.getType();
+  return getRepShapeForCvtLayout(srcTy, dstTy);
+}
+
+SmallVector<unsigned> getRepShapeForCvtLayout(RankedTensorType srcTy,
+                                              RankedTensorType dstTy) {
   Attribute srcLayout = srcTy.getEncoding();
   Attribute dstLayout = dstTy.getEncoding();
 
@@ -92,12 +97,19 @@ SmallVector<unsigned> getRepShapeForCvtLayout(triton::gpu::ConvertLayoutOp op) {
 SmallVector<unsigned>
 getScratchConfigForCvtLayout(triton::gpu::ConvertLayoutOp op, unsigned &inVec,
                              unsigned &outVec) {
-  auto repShape = getRepShapeForCvtLayout(op);
+  auto srcTy = op.getSrc().getType();
+  auto dstTy = op.getType();
+  return getScratchConfigForCvtLayout(srcTy, dstTy, inVec, outVec);
+}
+
+SmallVector<unsigned> getScratchConfigForCvtLayout(RankedTensorType srcTy,
+                                                   RankedTensorType dstTy,
+                                                   unsigned &inVec,
+                                                   unsigned &outVec) {
+  auto repShape = getRepShapeForCvtLayout(srcTy, dstTy);
   if (repShape.empty())
     return repShape;
   auto rank = repShape.size();
-  auto srcTy = op.getSrc().getType();
-  auto dstTy = op.getType();
   Attribute srcLayout = srcTy.getEncoding();
   Attribute dstLayout = dstTy.getEncoding();
 
@@ -625,6 +637,29 @@ private:
 
 void Allocation::run(FuncAllocMapT &funcAllocMap) {
   triton::AllocationAnalysis(getOperation(), &funcAllocMap, this);
+}
+
+std::map<Operation *, SmallVector<Allocation::BufferId>>
+Allocation::getLiveBuffers() {
+  std::map<Operation *, SmallVector<BufferId>> liveBuffers;
+
+  Operation *rootOperation = getOperation();
+  mlir::Liveness liveness(rootOperation);
+  auto analyzeOperation = [&](Operation *op) -> void {
+    auto scratchBuffer = getBufferId(op);
+    if (scratchBuffer != InvalidBufferId)
+      liveBuffers[op].push_back(scratchBuffer);
+    for (auto result : op->getOpResults()) {
+      auto bufferId = getBufferId(result);
+      if (bufferId == Allocation::InvalidBufferId)
+        continue;
+      auto liveOperations = liveness.resolveLiveness(result);
+      for (auto depOp : liveOperations)
+        liveBuffers[depOp].push_back(bufferId);
+    }
+  };
+  rootOperation->walk(analyzeOperation);
+  return liveBuffers;
 }
 
 } // namespace mlir

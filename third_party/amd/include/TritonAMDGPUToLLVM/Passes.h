@@ -22,6 +22,8 @@ namespace AMD {
 std::unique_ptr<OperationPass<ModuleOp>>
 createDecomposeUnsupportedConversionsPass(StringRef targetArch);
 
+std::unique_ptr<OperationPass<ModuleOp>>
+createOptimizeLDSUsagePass(StringRef arch, int32_t customLDSLimit = 0);
 } // namespace AMD
 
 std::unique_ptr<OperationPass<ModuleOp>>

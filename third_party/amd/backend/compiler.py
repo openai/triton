@@ -156,6 +156,9 @@ class HIPBackend(BaseBackend):
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
         amd.passes.ttgpuir.add_decompose_unsupported_conversions(pm, options.arch)
+        # experimental parameter, specifies custom LDS usage limit
+        custom_lds_size = 0
+        amd.passes.ttgpuir.add_optimize_lds_usage(pm, options.arch, custom_lds_size)
         passes.convert.add_scf_to_cf(pm)
         passes.convert.add_index_to_llvmir(pm)
 

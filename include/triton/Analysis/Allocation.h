@@ -21,7 +21,13 @@ class AllocationAnalysis;
 SmallVector<unsigned>
 getScratchConfigForCvtLayout(triton::gpu::ConvertLayoutOp op, unsigned &inVec,
                              unsigned &outVec);
+SmallVector<unsigned> getScratchConfigForCvtLayout(RankedTensorType srcType,
+                                                   RankedTensorType dstType,
+                                                   unsigned &inVec,
+                                                   unsigned &outVec);
 SmallVector<unsigned> getRepShapeForCvtLayout(triton::gpu::ConvertLayoutOp op);
+SmallVector<unsigned> getRepShapeForCvtLayout(RankedTensorType srcTy,
+                                              RankedTensorType dstTy);
 
 } // namespace triton
 
@@ -134,6 +140,9 @@ public:
 
   /// Returns the size of total shared memory allocated
   size_t getSharedMemorySize() const { return sharedMemorySize; }
+
+  /// Returns mapping from operation to list of live LDS buffers
+  std::map<Operation *, SmallVector<BufferId>> getLiveBuffers();
 
 private:
   /// A class that represents a shared memory buffer
