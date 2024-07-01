@@ -345,7 +345,7 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
         auto [lineNumber, fileName, dirName] =
             getSassToSourceCorrelation(pcData->functionName, pcData->pcOffset,
                                        cubinData->cubin, cubinData->cubinSize);
-        cubinData->lineInfo.emplace(
+        cubinData->lineInfo.try_emplace(
             key, lineNumber, std::string(pcData->functionName),
             std::string(fileName), std::string(dirName));
       }
