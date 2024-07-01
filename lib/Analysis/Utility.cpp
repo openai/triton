@@ -73,6 +73,20 @@ unsigned ReduceOpHelper::getThreadOffsetOnReductionAxis() {
     auto parentLayout = sliceLayout.getParent();
     auto threadsPerWarp = getThreadsPerWarp(parentLayout);
     threadOffset = threadsPerWarp[sliceLayout.getDim()];
+    // For cases where there is another dimension in between sliceDim and axis:
+    auto sliceDim = sliceLayout.getDim();
+    auto order = getOrder(parentLayout);
+    int axisOrder = -1, sliceDimOrder = -1;
+    for (unsigned i = 0; i < order.size(); i++) {
+      if (order[i] == axis)
+        axisOrder = i;
+      if (order[i] == sliceDim)
+        sliceDimOrder = i;
+    }
+    assert(axisOrder >= 0 && sliceDimOrder >= 0);
+    // This loop does nothing if sliceDimOrder >= axisDimOrder.
+    for (unsigned i = sliceDimOrder + 1; i < axisOrder; i++)
+      threadOffset *= threadsPerWarp[order[i]];
   } else {
     auto threadsPerWarp = getThreadsPerWarp(srcLayout);
     auto order = getOrder(srcLayout);

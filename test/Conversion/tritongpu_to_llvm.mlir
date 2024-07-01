@@ -1643,3 +1643,22 @@ module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 :
     tt.return
   }
 }
+
+// -----
+
+#blocked = #triton_gpu.blocked<{sizePerThread = [1, 1, 4], threadsPerWarp = [2, 2, 8], warpsPerCTA = [1, 1, 1], order = [2, 0, 1]}>
+module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 1 : i32, "triton_gpu.threads-per-warp" = 32 : i32} {
+  // CHECK-LABEL: reduce_3d
+  // CHECK: %[[C16:.+]] = llvm.mlir.constant(16 : i32) : i32
+  // CHECK: llvm.and %{{.+}}, %[[C16]]
+  // CHECK: %[[C16_2:.+]] = llvm.mlir.constant(16 : i32) : i32
+  // CHECK: nvvm.shfl.sync  bfly %{{.*}}, %{{.*}}, %[[C16_2]]
+  tt.func @reduce_3d(%arg0 : tensor<2x2xf32, #triton_gpu.slice<{dim = 2, parent = #blocked}>>) {
+    %0 = "tt.reduce"(%arg0) <{axis = 1 : i32}> ({
+        ^bb0(%arg1: f32, %arg2: f32):
+          %112 = arith.addf %arg1, %arg2 : f32
+          tt.reduce.return %112 : f32
+        }) : (tensor<2x2xf32, #triton_gpu.slice<{dim = 2, parent = #blocked}>>) -> tensor<2xf32, #triton_gpu.slice<{dim = 1, parent = #triton_gpu.slice<{dim = 2, parent = #blocked}>}>>
+    tt.return
+  }
+}
