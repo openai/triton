@@ -35,13 +35,10 @@ struct CubinData {
 
     LineInfoValue() = default;
 
-    LineInfoValue(uint32_t lineNumber, const char *functionName,
-                  const char *dirName, const char *fileName)
-        : lineNumber(lineNumber) {
-      functionName = functionName ? functionName : "";
-      dirName = dirName ? dirName : "";
-      fileName = fileName ? fileName : "";
-    }
+    LineInfoValue(uint32_t lineNumber, const std::string &functionName,
+                  const std::string &dirName, const std::string &fileName)
+        : lineNumber(lineNumber), functionName(functionName), dirName(dirName),
+          fileName(fileName) {}
   };
 
   std::map<LineInfoKey, LineInfoValue> lineInfo;
