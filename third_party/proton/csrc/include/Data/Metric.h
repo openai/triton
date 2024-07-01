@@ -180,9 +180,9 @@ public:
   PCSamplingMetric(PCSamplingMetricKind kind, uint64_t samples,
                    uint64_t stalledSamples)
       : PCSamplingMetric() {
-    this->values[kind] = samples;
+    this->values[kind] = stalledSamples;
     this->values[PCSamplingMetricKind::NumSamples] = samples;
-    this->values[PCSamplingMetricKind::NumStalledSamples] = samples;
+    this->values[PCSamplingMetricKind::NumStalledSamples] = stalledSamples;
   }
 
   virtual const std::string getName() const { return "PCSamplingMetric"; }
