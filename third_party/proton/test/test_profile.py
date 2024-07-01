@@ -200,6 +200,8 @@ def test_hook():
 
 
 def test_pcsampling():
+    if is_hip():
+        pytest.skip("HIP backend does not support pc sampling")
 
     @triton.jit
     def foo(x, y, size: tl.constexpr):
@@ -216,4 +218,6 @@ def test_pcsampling():
         x.zero_()
         proton.finalize()
         data = json.load(f)
-        print(data)
+        assert "foo@210" in data[0]["children"][0]["children"][0]["children"]["frame"]["name"]
+        assert data[0]["children"][0]["children"][0]["children"]["metrics"]["NumSamples"] > 0
+        assert data[0]["children"][0]["children"][0]["children"]["metrics"]["StalledLongScoreboard"] > 0
