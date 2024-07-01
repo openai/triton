@@ -303,6 +303,11 @@ def compile(src, target=None, options=None):
     metadata_group[metadata_filename] = fn_cache_manager.put(json.dumps(metadata, default=vars), metadata_filename,
                                                              binary=False)
     fn_cache_manager.put_group(metadata_filename, metadata_group)
+    # Compilation completed, disabling multithreading in context.
+    # This is needed to safely finalize threads pool inside context: if current process forks before
+    # python GC deletes context object, thread pool in child process will be invalid, which could
+    # lead to child crash or hang.
+    context.disable_multithreading()
     # return handle to compiled kernel
     return CompiledKernel(src, metadata_group, hash)
 

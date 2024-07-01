@@ -207,9 +207,13 @@ void init_triton_ir(py::module &&m) {
       .def(py::init<>())
       .def("printOpOnDiagnostic",
            [](MLIRContext &self, bool v) { self.printOpOnDiagnostic(v); })
-      .def("printStackTraceOnDiagnostic", [](MLIRContext &self, bool v) {
-        self.printStackTraceOnDiagnostic(v);
-      });
+      .def("printStackTraceOnDiagnostic",
+           [](MLIRContext &self, bool v) {
+             self.printStackTraceOnDiagnostic(v);
+           })
+      .def("disable_multithreading",
+           [](MLIRContext &self) { self.disableMultithreading(); });
+
   py::class_<SourceMgrDiagnosticHandler>(m, "source_mgr_diag",
                                          py::module_local())
       .def(py::init<llvm::SourceMgr &, MLIRContext *>());
