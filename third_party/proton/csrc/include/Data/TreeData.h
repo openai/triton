@@ -33,7 +33,6 @@ private:
   void init();
   void dumpHatchet(std::ostream &os) const;
   void doDump(std::ostream &os, OutputFormat outputFormat) const override;
-  size_t getValidScopeId(size_t scopeId) const;
 
   class Tree;
   std::unique_ptr<Tree> tree;
