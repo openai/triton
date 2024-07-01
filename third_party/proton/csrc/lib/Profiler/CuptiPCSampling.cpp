@@ -341,15 +341,13 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
       auto *cubinData = getCubinData(pcData->cubinCrc);
       auto key =
           CubinData::LineInfoKey{pcData->functionIndex, pcData->pcOffset};
-      auto lineInfoIter = cubinData->lineInfo.find(key);
-      if (lineInfoIter == cubinData->lineInfo.end()) {
+      if (cubinData->lineInfo.find(key) == cubinData->lineInfo.end()) {
         auto [lineNumber, fileName, dirName] =
             getSassToSourceCorrelation(pcData->functionName, pcData->pcOffset,
                                        cubinData->cubin, cubinData->cubinSize);
-        lineInfoIter->second.lineNumber = lineNumber;
-        lineInfoIter->second.functionName = pcData->functionName;
-        lineInfoIter->second.dirName = dirName;
-        lineInfoIter->second.fileName = fileName;
+        cubinData->lineInfo.emplace(
+            key, lineNumber, std::string(pcData->functionName),
+            std::string(fileName), std::string(dirName));
       }
       auto &lineInfo = cubinData->lineInfo[key];
       for (size_t j = 0; j < pcData->stallReasonCount; ++j) {
@@ -361,10 +359,9 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
           auto scopeId = externId;
           if (isAPI)
             scopeId = data->addScope(externId, lineInfo.functionName);
-          if (lineInfo.fileName)
+          if (lineInfo.fileName.size())
             scopeId = data->addScope(
-                scopeId, std::string(lineInfo.fileName) + ":" +
-                             std::string(lineInfo.functionName) + "@" +
+                scopeId, lineInfo.fileName + ":" + lineInfo.functionName + "@" +
                              std::to_string(lineInfo.lineNumber));
           auto metricKind = static_cast<PCSamplingMetric::PCSamplingMetricKind>(
               configureData->stallReasonIndexToMetricIndex
