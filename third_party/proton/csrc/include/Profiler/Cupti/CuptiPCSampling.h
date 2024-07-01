@@ -29,16 +29,16 @@ struct CubinData {
 
   struct LineInfoValue {
     uint32_t lineNumber{};
-    const char *functionName{};
-    const char *dirName{};
-    const char *fileName{};
+    char *functionName{};
+    char *dirName{};
+    char *fileName{};
 
     ~LineInfoValue() {
       // XXX: Don't free up functionName as it might be reused at other places
       if (dirName)
-        std::free(const_cast<char *>(dirName));
+        std::free(dirName);
       if (fileName)
-        std::free(const_cast<char *>(fileName));
+        std::free(fileName);
     }
   };
 

@@ -34,7 +34,7 @@ size_t getNumStallReasons(CUcontext context) {
   return numStallReasons;
 }
 
-std::tuple<uint32_t, const char *, const char *>
+std::tuple<uint32_t, char *, char *>
 getSassToSourceCorrelation(const char *functionName, uint64_t pcOffset,
                            const char *cubin, size_t cubinSize) {
   CUpti_GetSassToSourceCorrelationParams sassToSourceParams = {
@@ -351,8 +351,10 @@ void CuptiPCSampling::processPCSamplingData(ConfigureData *configureData,
         auto [lineNumber, fileName, dirName] =
             getSassToSourceCorrelation(pcData->functionName, pcData->pcOffset,
                                        cubinData->cubin, cubinData->cubinSize);
-        cubinData->lineInfo.emplace(key, lineNumber, pcData->functionName,
-                                    dirName, fileName);
+        cubinData->lineInfo[key].lineNumber = lineNumber;
+        cubinData->lineInfo[key].functionName = pcData->functionName;
+        cubinData->lineInfo[key].dirName = dirName;
+        cubinData->lineInfo[key].fileName = fileName;
       }
       auto &lineInfo = cubinData->lineInfo[key];
       for (size_t j = 0; j < pcData->stallReasonCount; ++j) {
