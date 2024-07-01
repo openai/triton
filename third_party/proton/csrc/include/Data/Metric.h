@@ -195,7 +195,7 @@ public:
 
 private:
   const static inline std::string VALUE_NAMES[PCSamplingMetricKind::Count] = {
-      "StalledSamples",
+      "NumSamples",
       "NumStalledSamples",
       "StalledBranchResolving",
       "StalledNoInstruction",
