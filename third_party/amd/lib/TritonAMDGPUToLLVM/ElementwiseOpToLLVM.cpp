@@ -956,6 +956,19 @@ struct FpToFpOpConversion
     for (unsigned i = 0; i < std::min(numElements, operands.size()); i++) {
       inVals.push_back(operands[i][0]);
     }
+    bool isSrcFP16 = srcElementType.isF16();
+    bool isSrcBF16 = srcElementType.isBF16();
+
+    if ((isSrcFP16 || isSrcBF16) && isDstFP32) {
+      SmallVector<Value> outVals;
+      for (Value &v : inVals) {
+        if (isSrcFP16)
+          outVals.push_back(convertFp16ToFp32(loc, rewriter, v));
+        else
+          outVals.push_back(convertBf16ToFp32(loc, rewriter, v));
+      }
+      return outVals;
+    }
     if (useFP16IntermediateSrc)
       for (Value &v : inVals)
         v = cvtFp32ToFp16(loc, rewriter, v,
