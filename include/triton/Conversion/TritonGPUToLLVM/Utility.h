@@ -1627,6 +1627,33 @@ inline Value packLLElements(Location loc,
   return llvmStruct;
 }
 
+inline SmallVector<Value> unpackLLVector(Location loc, Value llvmVec,
+                                         RewriterBase &rewriter) {
+  assert(bool(llvmVec) && "cannot unpack null value");
+  if (llvmVec.getType().isIntOrIndexOrFloat() ||
+      isa<triton::PointerType>(llvmVec.getType()) ||
+      isa<LLVM::LLVMPointerType>(llvmVec.getType()))
+    return {llvmVec};
+
+  SmallVector<Value> results;
+  for (int i = 0; i < cast<VectorType>(llvmVec.getType()).getNumElements();
+       i++) {
+    results.push_back(extract_element(llvmVec, i32_val(i)));
+  }
+  return results;
+}
+
+inline Value packLLVector(Location loc, ValueRange vals,
+                          RewriterBase &rewriter) {
+  assert(vals.size() > 0);
+  auto vecType = vec_ty(vals[0].getType(), vals.size());
+  Value vec = undef(vecType);
+  for (int i = 0; i < vals.size(); i++) {
+    vec = insert_element(vec, vals[i], i32_val(i));
+  }
+  return vec;
+}
+
 inline bool isLayoutMmaV1(Attribute layout) {
   bool isMmaV1 = false;
   if (auto mmaLayout = dyn_cast<NvidiaMmaEncodingAttr>(layout)) {
