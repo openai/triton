@@ -6,7 +6,6 @@ In this example, we will use the `libdevice` library to apply `asin` on a tensor
 Please refer to https://docs.nvidia.com/cuda/libdevice-users-guide/index.html (CUDA) and/or https://github.com/ROCm/llvm-project/tree/amd-staging/amd/device-libs/ocml/src (HIP) regarding the semantics of all available libdevice functions.
 In `libdevice.py`, we try to aggregate functions with the same computation but different data types together.
 For example, both `__nv_asin` and `__nv_asinf` calculate the principal value of the arc sine of the input, but `__nv_asin` operates on `double` and `__nv_asinf` operates on `float`.
-Using triton, you can simply call `tl.math.asin`.
 Triton automatically selects the correct underlying device function to invoke based on input and output types.
 """
 
@@ -14,11 +13,14 @@ Triton automatically selects the correct underlying device function to invoke ba
 #  asin Kernel
 # ------------
 
+import os
 import torch
 
 import triton
 import triton.language as tl
 from triton.language.extra import libdevice
+
+from pathlib import Path
 
 
 @triton.jit
@@ -60,9 +62,14 @@ print(f'The maximum difference between torch and triton is '
 #  Customize the libdevice library path
 # -------------------------------------
 # We can also customize the libdevice library path by passing the path to the `libdevice` library to the `asin` kernel.
+# This example uses the path from the `third_party/nvidia/backend/lib` directory (the default path).
+
+libdir = Path(__file__).parent.parent.parent / 'third_party/nvidia/backend/lib'
+extern_libs = {}
+extern_libs['libdevice'] = os.getenv("TRITON_LIBDEVICE_PATH", str(libdir / 'libdevice.10.bc'))
 
 output_triton = torch.empty_like(x)
-asin_kernel[grid](x, output_triton, n_elements, BLOCK_SIZE=1024)
+asin_kernel[grid](x, output_triton, n_elements, BLOCK_SIZE=1024, extern_libs=extern_libs)
 print(output_torch)
 print(output_triton)
 print(f'The maximum difference between torch and triton is '
