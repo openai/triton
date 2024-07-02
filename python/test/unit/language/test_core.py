@@ -32,6 +32,12 @@ def is_hip():
         triton.runtime.driver.active.get_current_target().backend == "hip"
 
 
+def get_arch():
+    if is_interpreter():
+        return ""
+    return str(triton.runtime.driver.active.get_current_target().arch)
+
+
 int_dtypes = ['int8', 'int16', 'int32', 'int64']
 uint_dtypes = ['uint8', 'uint16', 'uint32', 'uint64']
 float_dtypes = ['float16', 'float32', 'float64']
@@ -3050,7 +3056,7 @@ def convert_fp8_to_fp32(x, device, dtype_str):
 @pytest.mark.parametrize(
     "M, N, K, num_warps, col_a, col_b, epilogue, input_precision, in_dtype, out_dtype, kpack",
     [(*shape, 4, False, False, epilogue, input_precision, in_dtype, out_dtype, 1)
-     for shape in [(64, 64, 64), (32, 32, 32), (16, 16, 16)]
+     for shape in [(64, 64, 64), (32, 32, 32), (16, 16, 16)] + ([(16, 16, 8)] if "gfx9" in get_arch() else [])
      for epilogue in ['none', 'trans', 'add-matrix', 'add-rows', 'add-cols', 'softmax', 'chain-dot']
      for input_precision in ['tf32', 'tf32x3', 'ieee']
      for in_dtype, out_dtype in [('float16', 'float16'), ('float16', 'float32'), ('float32', 'float32')]
