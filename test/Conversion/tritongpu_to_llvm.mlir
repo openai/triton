@@ -85,10 +85,11 @@ module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 8 :
 module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 : i32} {
   // CHECK-LABEL: store_with_cache_attr
   tt.func @store_with_cache_attr(%a_ptr_init : tensor<256x!tt.ptr<f32>, #blocked0>, %cst : tensor<256xi1, #blocked0>, %cst_0 : tensor<256xf32, #blocked0>) {
+    //      CHECK: createpolicy
     //      CHECK: llvm.inline_asm
-    // CHECK-SAME: st.global.L1::evict_last.b32
+    // CHECK-SAME: st.global.L1::evict_last.L2::cache_hint.b32
     //      CHECK: llvm.inline_asm
-    // CHECK-SAME: st.global.L1::evict_last.b32
+    // CHECK-SAME: st.global.L1::evict_last.L2::cache_hint.b32
     tt.store %a_ptr_init, %cst_0, %cst evictionPolicy = evict_last cacheModifier = ca : tensor<256x!tt.ptr<f32>, #blocked0>
     tt.return
   }
@@ -1640,6 +1641,23 @@ module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 :
   // CHECK: llvm.call @vprintf(%{{.*}}, %{{.*}}) : (!llvm.ptr, !llvm.ptr) -> i32
   tt.func @print_ptr(%arg0 : tensor<256x!tt.ptr<i32>, #blocked0>) {
     tt.print "ptr: " {hex = false} : %arg0 : tensor<256x!tt.ptr<i32>, #blocked0>
+    tt.return
+  }
+}
+
+// -----
+#blocked = #triton_gpu.blocked<{sizePerThread = [4], threadsPerWarp = [32], warpsPerCTA = [4], order = [0]}>
+module attributes {"triton_gpu.num-ctas" = 1 : i32, "triton_gpu.num-warps" = 4 : i32} {
+  // CHECK-LABEL: test_l2_hint
+  // CHECK: %[[policy:[0-9]*]] = {{.*}}createpolicy.fractional.L2::evict_last.b64
+  // CHECK: ld.global.L1::evict_last.L2::cache_hint.b32 {{.*}} %{{[0-9]+}}, %[[policy]]
+  // CHECK: ld.global.L1::evict_last.L2::cache_hint.b32
+  // CHECK: st.global.L1::evict_last.L2::cache_hint.b32
+  tt.func public @test_l2_hint(%a_ptr : tensor<512x!tt.ptr<f32>, #blocked>, %b_ptr : tensor<512x!tt.ptr<f32>, #blocked>, %mask : tensor<512xi1, #blocked>, %c_ptr : tensor<512x!tt.ptr<f32>, #blocked>) {
+    %9 = tt.load %a_ptr, %mask {cache = 1 : i32, evict = 3 : i32, isVolatile = false} : tensor<512x!tt.ptr<f32>, #blocked>
+    %12 = tt.load %b_ptr, %mask {cache = 1 : i32, evict = 3 : i32, isVolatile = false} : tensor<512x!tt.ptr<f32>, #blocked>
+    %13 = arith.addf %9, %12 : tensor<512xf32, #blocked>
+    tt.store %c_ptr, %13, %mask {cache = 1 : i32, evict = 3 : i32} : tensor<512x!tt.ptr<f32>, #blocked>
     tt.return
   }
 }
