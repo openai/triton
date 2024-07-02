@@ -401,6 +401,22 @@ class CMakeBuild(build_ext):
                 "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
             ]
 
+        if check_env_flag("TRITON_LINK_WITH_LLD"):
+            cmake_args += [
+                "-DCMAKE_LINKER=lld",
+                "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
+                "-DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld",
+                "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",
+            ]
+
+        if check_env_flag("TRITON_LINK_WITH_MOLD"):
+            cmake_args += [
+                "-DCMAKE_LINKER=mold",
+                "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold",
+                "-DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=mold",
+                "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold",
+            ]
+
         # Note that asan doesn't work with binaries that use the GPU, so this is
         # only useful for tools like triton-opt that don't run code on the GPU.
         #
