@@ -90,8 +90,13 @@ LogicalResult convertFMADot(triton::DotOp op, triton::DotOp::Adaptor adaptor,
             int z = isCRow
                         ? mIdx * N / nShapePerCTATile * mSizePerThread + nIdx
                         : nIdx * M / mShapePerCTATile * nSizePerThread + mIdx;
-            ret[z] = rewriter.create<LLVM::FMulAddOp>(loc, has[{m + mm, k}],
-                                                      hbs[{n + nn, k}], ret[z]);
+            Type z_type = ret[z].getType();
+            auto cvt_a =
+                rewriter.create<LLVM::FPExtOp>(loc, z_type, has[{m + mm, k}]);
+            auto cvt_b =
+                rewriter.create<LLVM::FPExtOp>(loc, z_type, hbs[{n + nn, k}]);
+            ret[z] =
+                rewriter.create<LLVM::FMulAddOp>(loc, cvt_a, cvt_b, ret[z]);
           }
   }
 
