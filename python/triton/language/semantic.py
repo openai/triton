@@ -902,7 +902,7 @@ def _str_to_padding_option(padding_option):
 
 
 def _str_to_sem(sem_option):
-    sem = ir.MEM_SEMANTIC.ACQUIRE_RELEASE
+    sem = ir.MEM_SEMANTIC.RELAXED
     if sem_option:
         if sem_option == "acquire":
             sem = ir.MEM_SEMANTIC.ACQUIRE
