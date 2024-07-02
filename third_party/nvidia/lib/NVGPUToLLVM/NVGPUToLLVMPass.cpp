@@ -38,23 +38,6 @@ const std::string Cluster_Cta_Id_Op = "{\n"
                                       "mad.lo.u32 a1, a2, a4, a1;     \n"
                                       "mad.lo.u32 $0, a1, a3, a0;     \n"
                                       "}";
-const std::string Canonical_Warp_Id_Op =
-    "{\n"
-    ".reg .u32 a<5>;              \n"
-    "mov.u32 a0, %tid.x;          \n" // x
-    "mov.u32 a1, %tid.y;          \n" // y
-    "mov.u32 a2, %tid.z;          \n" // z
-    "mov.u32 a3, %ntid.x;         \n" // nx
-    "mov.u32 a4, %ntid.y;         \n" // ny
-    "mad.lo.u32 a1, a2, a4, a1;   \n"
-    "mad.lo.u32 a0, a1, a3, a0;   \n"
-    "shr.u32 a0, a0, 5;           \n"
-    ".reg .b32         %tmp<3>;   \n"
-    "mov.u32   %tmp0, -1;         \n"
-    "mov.u32   %tmp1, 31;         \n"
-    "mov.u32   %tmp2, 0;          \n"
-    "shfl.sync.idx.b32         $0, a0, %tmp2, %tmp1, %tmp0;           \n"
-    "}";
 
 bool isNumber(const std::string &s) {
   return !s.empty() && std::find_if(s.begin(), s.end(), [](unsigned char c) {
