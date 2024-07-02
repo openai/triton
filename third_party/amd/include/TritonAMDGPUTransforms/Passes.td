@@ -53,6 +53,18 @@ def TritonAMDGPUOptimizeEpilogue : Pass<"tritonamdgpu-optimize-epilogue", "mlir:
 
 }
 
+def TritonAMDGPUCanonicalizePointers : Pass<"tritonamdgpu-canonicalize-pointers", "mlir::ModuleOp"> {
+  let summary = "Canonicalize pointers: rewrite pointers passed to load/store operation as an <basePtr, offset> pair.";
+
+  let description = [{
+  }];
+
+  let constructor = "mlir::createTritonAMDGPUCanonicalizePointersPass()";
+
+  let dependentDialects = [];
+
+}
+
 def TritonAMDGPUReorderInstructions: Pass<"tritonamdgpu-reorder-instructions", "mlir::ModuleOp"> {
   let summary = "Reorder instructions";
 
