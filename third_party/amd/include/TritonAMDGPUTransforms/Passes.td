@@ -14,6 +14,12 @@ def TritonAMDGPUStreamPipeline : Pass<"tritonamdgpu-stream-pipeline", "mlir::Mod
   let constructor = "mlir::createTritonAMDGPUStreamPipelinePass()";
 
   let dependentDialects = [];
+
+  let options = [
+    Option<"numStages", "num_stages",
+           "int32_t", /*default*/"2",
+           "Number of Pipeline stages">
+  ];
 }
 
 def TritonAMDGPUAccelerateMatmul : Pass<"tritonamdgpu-accelerate-matmul", "mlir::ModuleOp"> {
