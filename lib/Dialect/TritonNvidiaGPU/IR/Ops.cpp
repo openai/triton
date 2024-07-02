@@ -60,13 +60,13 @@ mlir::LogicalResult WarpGroupDotOp::inferReturnTypes(
 void WarpGroupDotOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  auto a = getA();
-  auto b = getB();
-  if (isa<MemDescType>(a.getType()))
-    effects.emplace_back(MemoryEffects::Read::get(), a,
+  auto &a = getAMutable();
+  auto &b = getBMutable();
+  if (isa<MemDescType>(a.get().getType()))
+    effects.emplace_back(MemoryEffects::Read::get(), &a,
                          mlir::triton::gpu::SharedMemory::get());
-  if (isa<MemDescType>(b.getType()))
-    effects.emplace_back(MemoryEffects::Read::get(), b,
+  if (isa<MemDescType>(b.get().getType()))
+    effects.emplace_back(MemoryEffects::Read::get(), &b,
                          mlir::triton::gpu::SharedMemory::get());
 }
 
@@ -99,7 +99,7 @@ LogicalResult InitBarrierOp::verify() {
 void InitBarrierOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Write::get(), getAlloc(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getAllocMutable(),
                        mlir::triton::gpu::SharedMemory::get());
 }
 
@@ -113,7 +113,7 @@ LogicalResult InvalBarrierOp::verify() {
 void InvalBarrierOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Write::get(), getAlloc(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getAllocMutable(),
                        mlir::triton::gpu::SharedMemory::get());
 }
 
@@ -127,7 +127,7 @@ LogicalResult BarrierExpectOp::verify() {
 void BarrierExpectOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Write::get(), getAlloc(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getAllocMutable(),
                        mlir::triton::gpu::SharedMemory::get());
 }
 
@@ -141,7 +141,7 @@ LogicalResult WaitBarrierOp::verify() {
 void WaitBarrierOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), getAlloc(),
+  effects.emplace_back(MemoryEffects::Read::get(), &getAllocMutable(),
                        mlir::triton::gpu::SharedMemory::get());
   // Need a side effect to prevent compiler from reordering and removing
   // the wait operation.
@@ -161,11 +161,11 @@ LogicalResult AsyncTMACopyGlobalToLocalOp::verify() {
 void AsyncTMACopyGlobalToLocalOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), getDescPtr(),
+  effects.emplace_back(MemoryEffects::Read::get(), &getDescPtrMutable(),
                        mlir::triton::GlobalMemory::get());
-  effects.emplace_back(MemoryEffects::Write::get(), getBarrier(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getBarrierMutable(),
                        mlir::triton::gpu::SharedMemory::get());
-  effects.emplace_back(MemoryEffects::Write::get(), getResult(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getResultMutable(),
                        mlir::triton::gpu::SharedMemory::get());
 }
 
@@ -173,9 +173,9 @@ void AsyncTMACopyGlobalToLocalOp::getEffects(
 void AsyncTMACopyLocalToGlobalOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
-  effects.emplace_back(MemoryEffects::Write::get(), getDescPtr(),
+  effects.emplace_back(MemoryEffects::Write::get(), &getDescPtrMutable(),
                        mlir::triton::GlobalMemory::get());
-  effects.emplace_back(MemoryEffects::Read::get(), getSrc(),
+  effects.emplace_back(MemoryEffects::Read::get(), &getSrcMutable(),
                        mlir::triton::gpu::SharedMemory::get());
 }
 
