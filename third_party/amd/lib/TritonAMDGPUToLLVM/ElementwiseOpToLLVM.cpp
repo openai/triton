@@ -233,20 +233,26 @@ static Value Fp16_to_Fp8E5M2FNUZ_oneValue(Location loc,
   // normal value
   auto a = and_(i16_ty, vi16, int_val(16, 0x7FFFF));
   auto a1 = add(i16_ty, a, int_val(16, 0x0400));
-  auto o1 = or_(i16_ty, a1, sign);
 
   // subnormal value, e is 0
   auto m = and_(i16_ty, vi16, int_val(16, 0x03FF));
   auto m2 = shl(m, int_val(16, 1));
-  auto o2 = or_(i16_ty, sign, or_(i16_ty, int_val(16, 1), m2));
+  auto o2 = or_(i16_ty, int_val(16, 1), m2);
 
   auto e_is_zero = icmp_eq(e, int_val(16, 0));
   auto e_is_all1 = icmp_eq(e, int_val(16, 0x7C00));
 
-  auto ot = select(e_is_zero, o2, o1);
-  auto o = select(e_is_all1, vi16, ot);
+  auto ot = select(e_is_zero, o2, a1);
+  // When e is all one, value represents inf and should be cast to nan.
+  auto o = select(e_is_all1, int_val(16, 0x8000), ot);
+
+  // Handle -0 case, since it represents NaN we instead return
+  // positive 0.
+  auto o_is_zero = icmp_eq(o, int_val(16, 0));
+  // Return 0 if exponent and mantissa are zero, otherwise add in sign.
+  auto r = select(o_is_zero, int_val(16, 0), or_(i16_ty, sign, o));
   auto fp8x2VecTy = vec_ty(i8_ty, 2);
-  auto res = bitcast(o, fp8x2VecTy);
+  auto res = bitcast(r, fp8x2VecTy);
 
   return extract_element(i8_ty, res, i32_val(1));
 }
@@ -659,7 +665,17 @@ static Value Fp16_to_Fp8E4M3FNUZ_oneValue(Location loc,
   auto c23 = icmp_sle(e, int_val(16, 7));
   auto re = select(c23, e2, e13);
 
-  auto r = or_(i16_ty, s, or_(i16_ty, re, m));
+  // In nuz format, -0 is NaN. We need to explicitly handle this case.
+  auto re_m = or_(i16_ty, re, m);
+  // If mantissa and exponent are zero, return positive zero.
+  // Otherwise mix sign back into return value.
+  auto all_zero = icmp_eq(re_m, int_val(16, 0));
+  auto r = select(all_zero, int_val(16, 0), or_(i16_ty, s, re_m));
+  // Also check inf. If so, return nan.
+  auto inf = int_val(16, 0x7C00);
+  auto is_inf = icmp_eq(e10, inf);
+  auto r2 = select(is_inf, int_val(16, 0x8000), r);
+  // Finally cast to fp8 and extract high byte.
   auto fp8x2VecTy = vec_ty(i8_ty, 2);
   auto res = bitcast(r, fp8x2VecTy);
 
