@@ -590,8 +590,12 @@ class JITFunction(KernelInterface[T]):
         kwargs["debug"] = self.debug
 
         # Execute pre run hooks with args and kwargs
-        for hook in self.pre_run_hooks:
-            hook(*args, **kwargs)
+        if len(self.pre_run_hooks) > 0:
+            param_kwargs = {}
+            param_kwargs["grid"] = grid
+            param_kwargs["warmup"] = warmup
+            for hook in self.pre_run_hooks:
+                hook(*args, **{**kwargs, **param_kwargs})
 
         if self.binder is None:
             self.create_binder()
