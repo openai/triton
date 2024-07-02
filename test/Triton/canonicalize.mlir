@@ -25,6 +25,16 @@ tt.func @make_range() -> (tensor<128x1xi32>, tensor<1xi32>) {
   tt.return %c, %d : tensor<128x1xi32>, tensor<1xi32>
 }
 
+// CHECK-LABEL: fold_advance
+tt.func @fold_advance(%arg: !tt.ptr<tensor<64x64xf16>>) -> (!tt.ptr<tensor<64x64xf16>>) {
+  %c0_i32 = arith.constant 0 : i32
+  %0 = tt.advance %arg, [%c0_i32, %c0_i32] : <tensor<64x64xf16>>
+  // CHECK-NOT: tt.advance
+  //     CHECK: tt.return %arg
+  tt.return %0 : !tt.ptr<tensor<64x64xf16>>
+}
+
+
 // -----
 
 #blocked0 = #triton_gpu.blocked<{sizePerThread = [1, 1], threadsPerWarp = [32, 1], warpsPerCTA = [1, 1], order = [0, 1], CTAsPerCGA = [1, 1], CTASplitNum = [1, 1], CTAOrder = [0, 1]}>

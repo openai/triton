@@ -777,6 +777,19 @@ void MakeTensorPtrOp::build(OpBuilder &builder, OperationState &state,
                builder.getDenseI32ArrayAttr(order));
 }
 
+//-- AdvanceOp --
+OpFoldResult AdvanceOp::fold(FoldAdaptor adaptor) {
+  // advance(ptr, 0, 0) -> ptr
+  SmallVector<OpFoldResult> rawOffsets = getOffsets();
+  auto offsets = getConstantIntValues(rawOffsets);
+  if (!offsets.has_value())
+    return {};
+  for (int64_t offset : offsets.value())
+    if (offset != 0)
+      return {};
+  return getPtr();
+}
+
 // The following ops, including `call`, `func`, and `return` are copied and
 // modified from
 // https://github.com/llvm/llvm-project/blob/main/mlir/lib/Dialect/Func/IR/FuncOps.cpp
