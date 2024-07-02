@@ -226,14 +226,18 @@ def get_thirdparty_packages(packages: list):
                 shutil.rmtree(package_root_dir)
             os.makedirs(package_root_dir, exist_ok=True)
             print(f'downloading and extracting {p.url} ...')
+
+            def _print_progress(obj, *args):
+                print(f"extracting {obj.name}", flush=True)
+
             with open_url(p.url) as response:
                 if p.url.endswith(".zip"):
                     file_bytes = BytesIO(response.read())
                     with zipfile.ZipFile(file_bytes, "r") as file:
-                        file.extractall(path=package_root_dir)
+                        file.extractall(path=package_root_dir, filter=_print_progress)
                 else:
                     with tarfile.open(fileobj=response, mode="r|*") as file:
-                        file.extractall(path=package_root_dir)
+                        file.extractall(path=package_root_dir, filter=_print_progress)
             # write version url to package_dir
             with open(os.path.join(package_dir, "version.txt"), "w") as f:
                 f.write(p.url)
